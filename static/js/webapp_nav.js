@@ -543,6 +543,56 @@
       if (months < 12) return months + " " + plural(months, "месяц", "месяца", "месяцев") + " назад";
 
       return "больше года назад";
+    },
+
+    /* Дата из базы («2026-10-18 07:13:38», это UTC) → Date.
+       Дальше браузер сам переводит её в часовой пояс телефона. */
+    parseDate(value) {
+      if (!value) return null;
+      const raw = String(value).trim().replace(" ", "T");
+      const hasZone = /[zZ]$|[+-]\d\d:?\d\d$/.test(raw);
+      const date = new Date(hasZone ? raw : raw + "Z");
+      return isNaN(date.getTime()) ? null : date;
+    },
+
+    /* «10:13» */
+    formatTime(value) {
+      const date = this.parseDate(value);
+      if (!date) return "";
+      return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    },
+
+    /* «Сегодня», «Вчера», «12 октября», «12 октября 2025» — разделитель дней в переписке */
+    formatDay(value) {
+      const date = this.parseDate(value);
+      if (!date) return "";
+
+      const today = new Date();
+      const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const days = Math.round((startOf(today) - startOf(date)) / 86400000);
+
+      if (days === 0) return "Сегодня";
+      if (days === 1) return "Вчера";
+
+      const sameYear = date.getFullYear() === today.getFullYear();
+      return date.toLocaleDateString("ru-RU", sameYear
+        ? { day: "numeric", month: "long" }
+        : { day: "numeric", month: "long", year: "numeric" });
+    },
+
+    /* Коротко для списка: «10:13», «вчера», «12 окт», «12.10.2025» */
+    shortWhen(value) {
+      const date = this.parseDate(value);
+      if (!date) return "";
+
+      const day = this.formatDay(value);
+      if (day === "Сегодня") return this.formatTime(value);
+      if (day === "Вчера") return "вчера";
+
+      if (date.getFullYear() === new Date().getFullYear()) {
+        return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(".", "");
+      }
+      return date.toLocaleDateString("ru-RU");
     }
 
   };

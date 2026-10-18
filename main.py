@@ -2165,6 +2165,7 @@ j.description,
 j.city,
 j.address,
 j.created_at,
+j.telegram_id AS owner_id,
 COALESCE(j.company_name_override, ep.company_name, '') AS company_name,
 CASE
     WHEN ep.status = 'Проверен' THEN 1
@@ -2222,7 +2223,8 @@ WHERE j.status='approved'
             ensure_user(int(viewer_id))
             for r in rows:
                 jid = r.get("id")
-                if jid:
+                # свои вакансии работодатель смотрит постоянно — это не интерес соискателей
+                if jid and r.get("owner_id") != int(viewer_id):
                     c.execute(
                         "INSERT OR IGNORE INTO job_views (job_id, viewer_id, viewed_on) VALUES (?, ?, date('now'))",
                         (int(jid), int(viewer_id))
@@ -2251,6 +2253,11 @@ WHERE j.status='approved'
         for r in rows:
             r["applied"] = False
 
+    # Своя вакансия: откликнуться нельзя. Telegram ID владельца наружу не отдаём.
+    for r in rows:
+        owner_id = r.pop("owner_id", None)
+        r["is_own"] = bool(viewer_id) and owner_id == int(viewer_id)
+
     conn.close()
     return jsonify(rows)
 
@@ -2265,6 +2272,7 @@ def api_job_detail(job_id: int):
     c.execute("""
         SELECT
             j.id, j.title, j.salary_text, j.description, j.city, j.address, j.created_at,
+            j.telegram_id AS owner_id,
             COALESCE(j.company_name_override, ep.company_name, '') AS company_name,
             CASE WHEN ep.status = 'Проверен' THEN 1 ELSE 0 END AS verified,
             (SELECT COUNT(*) FROM job_views v WHERE v.job_id = j.id) AS views,
@@ -2280,6 +2288,8 @@ def api_job_detail(job_id: int):
         return jsonify({"error": "Вакансия не найдена"}), 404
 
     result = dict(row)
+    owner_id = result.pop("owner_id", None)   # наружу не отдаём
+    result["is_own"] = False
 
     # Откликался ли уже этот человек: иначе страница вакансии предлагала
     # откликнуться повторно и получала отказ только после нажатия.
@@ -2289,10 +2299,12 @@ def api_job_detail(job_id: int):
     if viewer_id:
         try:
             ensure_user(int(viewer_id))
-            c.execute(
-                "INSERT OR IGNORE INTO job_views (job_id, viewer_id, viewed_on) VALUES (?, ?, date('now'))",
-                (job_id, int(viewer_id))
-            )
+            result["is_own"] = owner_id == int(viewer_id)
+            if not result["is_own"]:
+                c.execute(
+                    "INSERT OR IGNORE INTO job_views (job_id, viewer_id, viewed_on) VALUES (?, ?, date('now'))",
+                    (job_id, int(viewer_id))
+                )
             c.execute(
                 "SELECT 1 FROM applications WHERE job_id=? AND applicant_id=? LIMIT 1",
                 (job_id, int(viewer_id))
@@ -3055,9 +3067,13 @@ def get_chat_access(application_id: int, tid: int):
             a.id AS application_id,
             a.applicant_id,
             j.telegram_id AS employer_id,
-            j.title AS job_title
+            j.title AS job_title,
+            COALESCE(j.company_name_override, ep.company_name, '') AS company_name,
+            r.full_name AS applicant_name
         FROM applications a
         JOIN jobs j ON j.id = a.job_id
+        LEFT JOIN employer_profiles ep ON ep.telegram_id = j.telegram_id
+        LEFT JOIN resumes r ON r.telegram_id = a.applicant_id
         WHERE a.id=?
     """, (application_id,))
     row = c.fetchone()
@@ -3110,9 +3126,16 @@ def api_chat_messages(application_id: int):
     conn.commit()
     conn.close()
 
+    # Соискатель переписывается с компанией, работодатель — с человеком из резюме
+    if tid == int(access["applicant_id"]):
+        peer_name = access.get("company_name") or "Работодатель"
+    else:
+        peer_name = access.get("applicant_name") or "Соискатель"
+
     return jsonify({
         "application_id": application_id,
         "job_title": access["job_title"],
+        "peer_name": peer_name,
         "current_user_id": tid,
         "messages": messages
     })
@@ -3243,6 +3266,10 @@ def api_apply():
     if not job:
         conn.close()
         return jsonify({"error": "Вакансия недоступна"}), 404
+
+    if int(job["telegram_id"]) == int(tid):
+        conn.close()
+        return jsonify({"error": "Это ваша вакансия — откликнуться на неё нельзя"}), 400
 
     try:
         c.execute("""

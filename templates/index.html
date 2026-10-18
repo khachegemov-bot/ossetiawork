@@ -6,11 +6,11 @@
 <title>Ossetia’s Work</title>
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20261018a"></script>
 
 <script>window.BOT_USERNAME = "{{ bot_username }}";</script>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20261018a">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20261018a">
 </head>
 
 <body>
@@ -394,7 +394,11 @@ async function loadJobs(){
     btn.className = "btn btn--primary";
     btn.textContent = j.applied ? "Вы уже откликнулись" : "Откликнуться";
 
-    if(j.applied){
+    if(j.is_own){
+      btn.disabled = true;
+      btn.className = "btn btn--quiet btn--block";
+      btn.textContent = "Это ваша вакансия";
+    } else if(j.applied){
       btn.disabled = true;
       btn.classList.add("btn--done");
     } else if(!OsWork.isInsideTelegram()){

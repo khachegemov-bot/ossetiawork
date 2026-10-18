@@ -6,29 +6,32 @@
 <title>Чат</title>
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20261018a"></script>
 
 <script>window.BOT_USERNAME = "{{ bot_username }}";</script>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20261018a">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20261018a">
 </head>
 
 <body>
 
 <div class="page-header page-header--nav">
-  <button class="btn btn--quiet btn--sm" type="button" onclick="OsWork.go('/chats', { replace:true })">Чаты</button>
+  <button class="btn btn--quiet btn--sm" type="button" onclick="OsWork.go('/chats', { replace:true, back:true })">Чаты</button>
   <h1 class="page-title">Переписка</h1>
   <span style="width:70px"></span>
 </div>
 
 <div class="card">
-  <div id="jobTitle" class="card__label">ЗАГРУЗКА...</div>
+  <div class="chat-head">
+    <div class="card__title" id="peerName">Загрузка…</div>
+    <div class="card__sub" id="jobTitle"></div>
+  </div>
 
   <div id="messages" class="bubbles"></div>
 
   <div class="composer">
     <label class="visually-hidden" for="text">Сообщение</label>
-    <input id="text" class="input" placeholder="Введите сообщение">
+    <input id="text" class="input" placeholder="Сообщение" maxlength="1000" autocomplete="off">
     <button class="composer__send" type="button" id="btnSend" aria-label="Отправить">
       <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
     </button>
@@ -57,83 +60,127 @@ function esc(s){
     .replaceAll("'","&#39;");
 }
 
-async function loadMessages(){
-  const r = await OsWork.apiFetch(`/api/chat/${applicationId}`);
-  const data = await r.json().catch(()=>({}));
+let lastSignature = "";   // сколько сообщений и какое последнее — чтобы не перерисовывать зря
+let sending = false;
+
+// Человек у нижнего края — значит, читает свежее, и новое сообщение можно показать.
+// Если он прокрутил вверх, чтобы перечитать, — не дёргаем.
+function nearBottom(box){
+  return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+}
+
+async function loadMessages(opts = {}){
+  if(document.hidden && !opts.force) return;
 
   const box = document.getElementById("messages");
 
+  let r, data;
+  try{
+    r = await OsWork.apiFetch(`/api/chat/${applicationId}`);
+    data = await r.json().catch(()=>({}));
+  }catch(e){
+    return;   // пропала сеть — попробуем при следующей проверке
+  }
+
   if(!r.ok){
-    box.innerHTML = `<div class="empty">${esc(data.error || "Ошибка")}</div>`;
+    // при первой загрузке объясняем, дальше не стираем уже показанную переписку
+    if(!lastSignature){
+      box.innerHTML = `<div class="empty">${esc(data.error || "Не удалось загрузить переписку")}</div>`;
+    }
     return;
   }
 
   currentUserId = Number(data.current_user_id);
-  document.getElementById("jobTitle").textContent = data.job_title
-    ? "ВАКАНСИЯ: " + String(data.job_title).toUpperCase()
-    : "ПЕРЕПИСКА";
+  document.getElementById("peerName").textContent = data.peer_name || "Переписка";
+  document.getElementById("jobTitle").textContent = data.job_title ? "Вакансия: " + data.job_title : "";
 
   const messages = Array.isArray(data.messages) ? data.messages : [];
+  const last = messages.length ? messages[messages.length - 1].id : 0;
+  const signature = messages.length + ":" + last;
+
+  if(signature === lastSignature && !opts.force) return;
+
+  const stick = !lastSignature || opts.toBottom || nearBottom(box);
+  lastSignature = signature;
 
   if(!messages.length){
-    box.innerHTML = `<div class="empty">Сообщений пока нет</div>`;
+    box.innerHTML = `<div class="empty">Сообщений пока нет.<br>Напишите первым — собеседник получит уведомление в Telegram.</div>`;
     return;
   }
 
+  let lastDay = "";
   box.innerHTML = messages.map(m=>{
     const isMe = Number(m.sender_id) === currentUserId;
-    return `
+    const day = OsWork.formatDay(m.created_at);
+    const divider = day && day !== lastDay ? `<div class="bubble-day">${esc(day)}</div>` : "";
+    if(day) lastDay = day;
+
+    return divider + `
       <div class="bubble ${isMe ? "bubble--mine" : "bubble--other"}">
-        <div class="bubble__who">${isMe ? "Вы" : "Собеседник"}</div>
-        <div>${esc(m.message || m.message_text || "")}</div>
-        <div class="bubble__time">${esc(m.created_at || "")}</div>
+        <div class="bubble__text">${esc(m.message || m.message_text || "")}</div>
+        <div class="bubble__time">${esc(OsWork.formatTime(m.created_at))}</div>
       </div>
     `;
   }).join("");
 
-  box.scrollTop = box.scrollHeight;
+  if(stick) box.scrollTop = box.scrollHeight;
 }
 
 async function sendMessage(){
+  if(sending) return;   // двойной Enter не отправит сообщение дважды
+
   const input = document.getElementById("text");
   const btn = document.getElementById("btnSend");
   const text = input.value.trim();
 
-  if(!text){
-    return;
-  }
+  if(!text) return;
 
+  sending = true;
   btn.disabled = true;
 
-  const r = await OsWork.apiFetch(`/api/chat/${applicationId}`, {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ text })
-  });
+  let r, data;
+  try{
+    r = await OsWork.apiFetch(`/api/chat/${applicationId}`, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ text })
+    });
+    data = await r.json().catch(()=>({}));
+  }catch(e){
+    r = { ok:false };
+    data = { error:"Нет связи. Проверьте интернет и попробуйте ещё раз." };
+  }
 
-  const data = await r.json().catch(()=>({}));
-
+  sending = false;
   btn.disabled = false;
 
   if(!r.ok){
-    alert(data.error || "Ошибка отправки");
+    OsWork.haptic("error");
+    alert(data.error || "Не удалось отправить сообщение");
     return;
   }
 
   input.value = "";
-  await loadMessages();
+  input.focus();
+  await loadMessages({ force:true, toBottom:true });
 }
 
 document.getElementById("btnSend").addEventListener("click", sendMessage);
 
 document.getElementById("text").addEventListener("keydown", e=>{
-  if(e.key === "Enter"){
+  if(e.key === "Enter" && !e.isComposing){
+    e.preventDefault();
     sendMessage();
   }
 });
 
-loadMessages();
+// Новые сообщения проверяем раз в 5 секунд, пока приложение открыто
+loadMessages({ force:true });
 setInterval(loadMessages, 5000);
+
+document.addEventListener("visibilitychange", ()=>{
+  if(!document.hidden) loadMessages();
+});
 </script>
 
 </body>

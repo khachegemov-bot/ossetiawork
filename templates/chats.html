@@ -6,11 +6,11 @@
 <title>Чаты</title>
 
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20261018a"></script>
 
 <script>window.BOT_USERNAME = "{{ bot_username }}";</script>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20261018a">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20261018a">
 </head>
 
 <body>
@@ -109,9 +109,9 @@ function renderChats(){
           ${unread > 0 ? `<span class="badge-count">${unread}</span>` : ""}
         </div>
 
-        <div class="card__preview">${esc(last)}</div>
+        <div class="card__preview" ${c.last_message ? "" : 'style="color:var(--text-dim)"'}>${esc(last)}</div>
 
-        ${c.last_message_at ? `<div class="card__time">${esc(c.last_message_at)}</div>` : ""}
+        ${c.last_message_at ? `<div class="card__time">${esc(OsWork.shortWhen(c.last_message_at))}</div>` : ""}
       </article>
     `;
   }).join("");
