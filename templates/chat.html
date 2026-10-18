@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Чат</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" type="button" onclick="OsWork.go('/chats', { replace:true })">Чаты</button>
+  <h1 class="page-title">Переписка</h1>
+  <span style="width:70px"></span>
+</div>
+
+<div class="card">
+  <div id="jobTitle" class="card__label">ЗАГРУЗКА...</div>
+
+  <div id="messages" class="bubbles"></div>
+
+  <div class="composer">
+    <label class="visually-hidden" for="text">Сообщение</label>
+    <input id="text" class="input" placeholder="Введите сообщение">
+    <button class="composer__send" type="button" id="btnSend" aria-label="Отправить">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+// Дальше идти нельзя — элементов, к которым обращается код ниже, уже нет.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+OsWork.setBackButton({ visible:true, fallbackUrl:"/chats", preferReferrer:true });
+
+const applicationId = {{ application_id }};
+let currentUserId = null;
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+async function loadMessages(){
+  const r = await OsWork.apiFetch(`/api/chat/${applicationId}`);
+  const data = await r.json().catch(()=>({}));
+
+  const box = document.getElementById("messages");
+
+  if(!r.ok){
+    box.innerHTML = `<div class="empty">${esc(data.error || "Ошибка")}</div>`;
+    return;
+  }
+
+  currentUserId = Number(data.current_user_id);
+  document.getElementById("jobTitle").textContent = data.job_title
+    ? "ВАКАНСИЯ: " + String(data.job_title).toUpperCase()
+    : "ПЕРЕПИСКА";
+
+  const messages = Array.isArray(data.messages) ? data.messages : [];
+
+  if(!messages.length){
+    box.innerHTML = `<div class="empty">Сообщений пока нет</div>`;
+    return;
+  }
+
+  box.innerHTML = messages.map(m=>{
+    const isMe = Number(m.sender_id) === currentUserId;
+    return `
+      <div class="bubble ${isMe ? "bubble--mine" : "bubble--other"}">
+        <div class="bubble__who">${isMe ? "Вы" : "Собеседник"}</div>
+        <div>${esc(m.message || m.message_text || "")}</div>
+        <div class="bubble__time">${esc(m.created_at || "")}</div>
+      </div>
+    `;
+  }).join("");
+
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendMessage(){
+  const input = document.getElementById("text");
+  const btn = document.getElementById("btnSend");
+  const text = input.value.trim();
+
+  if(!text){
+    return;
+  }
+
+  btn.disabled = true;
+
+  const r = await OsWork.apiFetch(`/api/chat/${applicationId}`, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ text })
+  });
+
+  const data = await r.json().catch(()=>({}));
+
+  btn.disabled = false;
+
+  if(!r.ok){
+    alert(data.error || "Ошибка отправки");
+    return;
+  }
+
+  input.value = "";
+  await loadMessages();
+}
+
+document.getElementById("btnSend").addEventListener("click", sendMessage);
+
+document.getElementById("text").addEventListener("keydown", e=>{
+  if(e.key === "Enter"){
+    sendMessage();
+  }
+});
+
+loadMessages();
+setInterval(loadMessages, 5000);
+</script>
+
+</body>
+</html>

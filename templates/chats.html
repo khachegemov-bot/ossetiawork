@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Чаты</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" type="button" onclick="OsWork.go('/', { replace:true })">Назад</button>
+  <h1 class="page-title">Чаты</h1>
+  <span style="width:76px"></span>
+</div>
+
+<div class="field">
+  <span class="field__icon">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+  </span>
+  <label class="visually-hidden" for="search">Поиск по чатам</label>
+  <input id="search" placeholder="Поиск по чатам">
+</div>
+
+<div id="chatsBox">
+  <div class="skeleton" style="height:96px"></div>
+  <div class="skeleton" style="height:96px"></div>
+</div>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+// Дальше идти нельзя — элементов, к которым обращается код ниже, уже нет.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+OsWork.setBackButton({ visible:true, fallbackUrl:"/" });
+
+let allChats = [];
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function openChat(id){
+  OsWork.go(`/chat/${id}`, { replace:true });
+}
+
+async function loadChats(){
+  const box = document.getElementById("chatsBox");
+
+  const r = await OsWork.apiFetch("/api/chats");
+  const data = await r.json().catch(()=>[]);
+
+  if(!r.ok){
+    box.innerHTML = `<div class="empty">${esc(data.error || "Не удалось загрузить чаты")}</div>`;
+    return;
+  }
+
+  allChats = Array.isArray(data) ? data : [];
+  renderChats();
+}
+
+function renderChats(){
+  const box = document.getElementById("chatsBox");
+  const q = document.getElementById("search").value.trim().toLowerCase();
+
+  const chats = allChats.filter(c=>{
+    const text = `${c.chat_title || ""} ${c.chat_subtitle || ""} ${c.job_city || ""} ${c.last_message || ""}`.toLowerCase();
+    return !q || text.includes(q);
+  });
+
+  if(!chats.length){
+    box.innerHTML = `
+      <div class="empty">
+        Чатов пока нет.<br>
+        Чат появится после отклика на вакансию.
+      </div>
+    `;
+    return;
+  }
+
+  box.innerHTML = chats.map(c=>{
+    const unread = Number(c.unread_count || 0);
+    const title = c.chat_title || "Чат";
+    const vacancy = c.chat_subtitle || "Вакансия";
+    const last = c.last_message || "Сообщений пока нет";
+
+    return `
+      <article class="card card--link" data-id="${Number(c.application_id)}">
+        <div class="card__head">
+          <div style="min-width:0;">
+            <div class="card__title">${esc(title)}</div>
+            <div class="card__sub">${esc(vacancy)}</div>
+          </div>
+          ${unread > 0 ? `<span class="badge-count">${unread}</span>` : ""}
+        </div>
+
+        <div class="card__preview">${esc(last)}</div>
+
+        ${c.last_message_at ? `<div class="card__time">${esc(c.last_message_at)}</div>` : ""}
+      </article>
+    `;
+  }).join("");
+
+  box.querySelectorAll(".card--link").forEach(card=>{
+    card.onclick = ()=>openChat(card.getAttribute("data-id"));
+  });
+}
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  document.getElementById("search").addEventListener("input", renderChats);
+  loadChats();
+});
+
+window.addEventListener("focus", loadChats);
+
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState === "visible"){
+    loadChats();
+  }
+});
+</script>
+
+</body>
+</html>

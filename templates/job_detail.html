@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Вакансия</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+<body>
+
+<div id="jobBox">
+  <div class="skeleton" style="height:220px"></div>
+</div>
+
+<script>
+OsWork.init();
+OsWork.noticeOutsideTelegram();
+OsWork.setBackButton({ visible:true, fallbackUrl:"/", preferReferrer:true });
+
+const jobId = {{ job_id }};
+
+// Пульт родной нижней кнопки Telegram; null — если её нет (браузер, старый клиент)
+let mainBtn = null;
+
+const ICON_PIN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>`;
+const ICON_CHECK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+async function loadJob(){
+  const box = document.getElementById("jobBox");
+
+  const r = await OsWork.apiFetch(`/api/jobs/${jobId}`);
+  const job = await r.json().catch(()=>({}));
+
+  if(!r.ok){
+    box.innerHTML = `<div class="empty">Вакансия не найдена.</div>`;
+    return;
+  }
+
+  const place = [job.city, job.address].filter(Boolean).map(esc).join(" · ");
+
+  box.innerHTML = `
+    <article class="card rise">
+      <h1 class="card__title" style="font-size:20px;">${esc(job.title)}</h1>
+
+      ${job.company_name ? `
+        <div class="card__sub">
+          <span>${esc(job.company_name)}</span>
+          ${job.verified ? `<span class="verified">${ICON_CHECK}проверен</span>` : ""}
+        </div>` : ""}
+
+      ${job.salary_text ? `<div class="card__salary">${esc(job.salary_text)}</div>` : ""}
+
+      ${place ? `<div class="meta">${ICON_PIN}<span>${place}</span></div>` : ""}
+
+      ${job.description ? `<p class="body-text" style="margin:14px 0 0;">${esc(job.description)}</p>` : ""}
+
+      ${job.created_at ? `<div class="card__time">Опубликована ${esc(OsWork.timeAgo(job.created_at))}</div>` : ""}
+    </article>
+
+    <button class="btn btn--primary" type="button" id="btnApply">Откликнуться</button>
+    <button class="btn btn--quiet btn--block" type="button" id="btnShare" style="margin-top:10px;">Поделиться вакансией</button>
+    <div id="applyMsg" class="msg msg--center"></div>
+  `;
+
+  const applyBtn = document.getElementById("btnApply");
+  const shareBtn = document.getElementById("btnShare");
+  const share = ()=>OsWork.shareJob(jobId, job.title);
+
+  // Обычный браузер: откликнуться здесь нельзя, ведём в Telegram сразу на эту вакансию
+  if(!OsWork.isInsideTelegram()){
+    applyBtn.textContent = "Откликнуться в Telegram";
+    applyBtn.onclick = ()=>{ window.location.href = OsWork.botLink() + "?start=job_" + jobId; };
+    shareBtn.onclick = share;
+    return;
+  }
+
+  // Telegram: главное действие — родная кнопка внизу экрана, с бликом
+  if(job.applied){
+    mainBtn = OsWork.mainButton({ text: "Вы уже откликнулись" });
+    if(mainBtn) mainBtn.done("Вы уже откликнулись");
+  } else {
+    mainBtn = OsWork.mainButton({ text: "Откликнуться", shine: true, onClick: apply });
+  }
+
+  if(mainBtn){
+    applyBtn.style.display = "none";
+  } else if(job.applied){
+    applyBtn.disabled = true;
+    applyBtn.classList.add("btn--done");
+    applyBtn.textContent = "Вы уже откликнулись";
+  } else {
+    applyBtn.onclick = apply;
+  }
+
+  // «Поделиться» — вторая родная кнопка рядом с главной, если клиент умеет
+  const second = OsWork.secondaryButton({ text: "Поделиться", onClick: share });
+
+  if(second){
+    shareBtn.style.display = "none";
+  } else {
+    shareBtn.onclick = share;
+  }
+}
+
+async function apply(){
+  const btn = document.getElementById("btnApply");
+  const msg = document.getElementById("applyMsg");
+
+  if(mainBtn){
+    mainBtn.busy(true);
+  } else {
+    btn.disabled = true;
+    btn.textContent = "Отправка...";
+  }
+
+  const r = await OsWork.apiFetch("/api/apply",{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ job_id: jobId })
+  });
+
+  const data = await r.json().catch(()=>({}));
+
+  if(!r.ok){
+    OsWork.haptic("error");
+
+    if(mainBtn){
+      mainBtn.busy(false);
+    } else {
+      btn.disabled = false;
+      btn.textContent = "Откликнуться";
+    }
+
+    msg.className = "msg msg--center bad";
+    msg.textContent = data.error || "Ошибка";
+    return;
+  }
+
+  OsWork.haptic("success");
+
+  if(mainBtn){
+    mainBtn.done("Вы откликнулись");
+  } else {
+    btn.classList.add("btn--done");
+    btn.textContent = "Вы откликнулись";
+  }
+
+  msg.className = "msg msg--center ok";
+  msg.textContent = "Работодатель уведомлён. Ответ придёт в чат с ботом.";
+}
+
+loadJob();
+</script>
+
+</body>
+</html>

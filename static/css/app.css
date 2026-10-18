@@ -1,0 +1,1118 @@
+/* ============================================================
+   Ossetia Work — единое оформление
+   Вариант «Ночь и латунь».
+
+   Правило: цвета, отступы и размеры берутся ТОЛЬКО из переменных
+   ниже. Если понадобился новый цвет — он добавляется сюда, а не
+   вписывается внутрь страницы. Иначе страницы снова разъедутся.
+   ============================================================ */
+
+:root {
+  /* Фон и поверхности */
+  --bg:            #0C0E13;
+  --surface:       #12151C;   /* карточки */
+  --surface-2:     #14171E;   /* поля ввода */
+  --surface-soft:  rgba(255,255,255,.04);
+
+  /* Линии вместо теней: в темноте объём делают они */
+  --line:          rgba(255,255,255,.07);
+  --line-strong:   rgba(255,255,255,.12);
+
+  /* Текст */
+  --text:          #F2F3F5;
+  --text-muted:    #8A9099;
+  --text-dim:      #6F757F;
+
+  /* Акцент. Только зарплата и главное действие. Больше нигде. */
+  --gold:          #D9B872;
+  --gold-hover:    #E4C88B;
+  --gold-ink:      #14161B;   /* текст на золотой кнопке */
+
+  --ok:            #5FB37A;
+  --bad:           #E5484D;
+
+  /* Скругления */
+  --r-sm: 10px;
+  --r-md: 12px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  --r-round: 999px;
+
+  /* Отступы */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 28px;
+
+  /* Высота кнопок и полей: не меньше 44px, иначе трудно попасть пальцем */
+  --control-h: 46px;
+  --control-h-sm: 44px;
+
+  /* Шрифты */
+  --font-ui:      'Golos Text', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Unbounded', var(--font-ui);
+}
+
+/* ---------- Основа ---------- */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: var(--sp-5) 18px calc(var(--sp-6) + env(safe-area-inset-bottom, 0px));
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, p { margin: 0; }
+
+button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- Шапка ---------- */
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-4);
+}
+
+.page-title {
+  font-family: var(--font-display);
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- Кнопки ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: var(--control-h);
+  padding: 0 var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, transform .08s ease;
+}
+
+.btn:active { transform: scale(.985); }
+
+.btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* Главное действие. На экране должно быть одно. */
+.btn--primary {
+  width: 100%;
+  background: var(--gold);
+  color: var(--gold-ink);
+  font-weight: 600;
+}
+.btn--primary:hover { background: var(--gold-hover); }
+
+/* Обычные разделы: тихие, чтобы не спорить с главным действием */
+.btn--quiet {
+  background: var(--surface-soft);
+  border-color: var(--line-strong);
+  color: #C9CDD4;
+  font-size: 13px;
+}
+.btn--quiet:hover { border-color: rgba(255,255,255,.2); }
+
+.btn--danger { background: transparent; border-color: var(--bad); color: var(--bad); }
+
+.btn--block { width: 100%; }
+
+.btn[disabled] { opacity: .45; cursor: default; }
+
+/* Круглая кнопка со значком */
+.icon-btn {
+  position: relative;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-round);
+  background: var(--surface-soft);
+  border: 1px solid var(--line-strong);
+  color: #D9D9DE;
+  cursor: pointer;
+}
+.icon-btn:active { transform: scale(.96); }
+
+/* Красная точка непрочитанного */
+.dot {
+  position: absolute;
+  top: 1px; right: 1px;
+  width: 9px; height: 9px;
+  border-radius: var(--r-round);
+  background: var(--bad);
+  border: 2px solid var(--bg);
+}
+
+/* Ряд кнопок-разделов */
+.nav-row { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.nav-row .btn { flex-grow: 1; height: var(--control-h-sm); padding: 0 var(--sp-3); }
+
+/* ---------- Поля ---------- */
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: var(--control-h);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  margin-bottom: var(--sp-3);
+}
+.field:focus-within { border-color: var(--line-strong); }
+
+.field input,
+.field textarea {
+  flex-grow: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+.field input::placeholder { color: var(--text-dim); }
+
+.field--area { height: auto; padding: var(--sp-3) var(--sp-4); align-items: flex-start; }
+.field--area textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+
+.field__icon { flex-shrink: 0; color: var(--text-dim); display: flex; }
+
+/* Выпадающий список */
+.select {
+  width: 100%;
+  height: var(--control-h-sm);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-md);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: #C9CDD4;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: var(--sp-4);
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%236F757F' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.select option { background: var(--surface); color: var(--text); }
+
+/* ---------- Заголовок раздела ---------- */
+
+.section-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--sp-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  color: var(--text-dim);
+}
+
+/* ---------- Карточка ---------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+
+.card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-3); }
+
+.card__title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: var(--sp-1); }
+
+.card__sub { font-size: 12.5px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+
+/* Зарплата — то, ради чего человек открыл приложение */
+.card__salary {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--gold);
+  margin: var(--sp-3) 0 var(--sp-2);
+}
+
+.card__text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-3);
+}
+
+/* Строка со значком: город, адрес, дата */
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+.meta svg { flex-shrink: 0; }
+
+.verified { color: var(--ok); display: inline-flex; align-items: center; gap: 4px; }
+
+/* Метка статуса */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.tag--ok   { color: var(--ok);   border-color: rgba(95,179,122,.35); }
+.tag--bad  { color: var(--bad);  border-color: rgba(229,72,77,.35); }
+.tag--wait { color: var(--gold); border-color: rgba(217,184,114,.35); }
+
+/* ---------- Пусто и загрузка ---------- */
+
+.empty {
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+/* Серые плашки на время загрузки: экран не прыгает и не мигает пустотой */
+.skeleton {
+  height: 120px;
+  border-radius: var(--r-xl);
+  background: linear-gradient(90deg, var(--surface) 25%, #171B23 37%, var(--surface) 63%);
+  background-size: 400% 100%;
+  animation: skeleton 1.3s ease infinite;
+  margin-bottom: var(--sp-3);
+}
+
+@keyframes skeleton {
+  from { background-position: 100% 50%; }
+  to   { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  .btn { transition: none; }
+}
+
+/* ---------- Избранное ---------- */
+
+.favorite-btn {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  margin: -4px -4px 0 0;
+}
+.favorite-btn:active { transform: scale(.92); }
+.favorite-btn.is-active { color: var(--gold); }
+.favorite-btn.is-active svg { fill: var(--gold); }
+
+/* Действие уже выполнено: не золотое, чтобы не звало нажать ещё раз */
+.btn--done {
+  background: transparent;
+  border-color: rgba(95,179,122,.4);
+  color: var(--ok);
+  font-weight: 500;
+}
+
+/* ---------- Сообщения под действием ---------- */
+
+.msg { margin-top: var(--sp-2); font-size: 13px; }
+.msg.ok  { color: var(--ok); }
+.msg.bad { color: var(--bad); }
+
+/* ---------- Компактная кнопка для верхних рядов ---------- */
+
+.btn--sm { height: 38px; padding: 0 var(--sp-3); font-size: 13px; }
+
+/* ---------- Ряд-действие: крупный выбор на всю ширину ----------
+   Используется там, где вариантов несколько и они равнозначны:
+   золотой красить каждый нельзя, иначе акцент снова пропадёт. */
+
+.list-action {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 58px;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  margin-bottom: var(--sp-2);
+  transition: border-color .15s ease, transform .08s ease;
+}
+.list-action:hover  { border-color: var(--line-strong); }
+.list-action:active { transform: scale(.99); }
+.list-action:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.list-action__icon { flex-shrink: 0; color: var(--gold); display: flex; }
+.list-action__body { flex-grow: 1; min-width: 0; }
+.list-action__hint { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 400; color: var(--text-muted); }
+.list-action__chev { flex-shrink: 0; color: var(--text-dim); display: flex; }
+
+/* ---------- Пояснение мелким текстом ---------- */
+
+.note { font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+.note--spaced { margin-top: var(--sp-4); }
+
+/* ---------- Заголовок с кнопкой возврата ---------- */
+
+.page-header--nav { gap: var(--sp-3); }
+.page-header--nav .page-title { flex-grow: 1; text-align: center; font-size: 19px; }
+.page-header--nav .btn { flex-shrink: 0; }
+
+/* ---------- Крупный текст вакансии или резюме ---------- */
+
+.body-text { font-size: 14px; line-height: 1.55; color: #DDE0E4; white-space: pre-line; }
+
+/* ---------- Поля формы ---------- */
+
+.input,
+.textarea {
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: var(--sp-3);
+  outline: none;
+  transition: border-color .15s ease;
+}
+.input:focus,
+.textarea:focus { border-color: var(--line-strong); }
+
+.input::placeholder,
+.textarea::placeholder { color: var(--text-dim); }
+
+.textarea {
+  height: auto;
+  min-height: 96px;
+  padding: var(--sp-3) var(--sp-4);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* ---------- Строка списка внутри карточки ---------- */
+
+.list-item {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.list-item:last-child { border-bottom: none; padding-bottom: 0; }
+.list-item:first-child { padding-top: 0; }
+
+.list-item__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+
+.list-item__title { font-size: 15px; font-weight: 600; }
+
+/* ---------- Заголовок блока внутри карточки ---------- */
+
+.card__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  color: var(--text-dim);
+  margin-bottom: var(--sp-3);
+}
+
+.msg--center { text-align: center; }
+
+/* ---------- Счётчик непрочитанного ---------- */
+
+.badge-count {
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--r-round);
+  background: var(--bad);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------- Карточка-ссылка (строка списка чатов) ---------- */
+
+.card--link { cursor: pointer; transition: border-color .15s ease; }
+.card--link:hover  { border-color: var(--line-strong); }
+.card--link:active { transform: scale(.995); }
+
+.card__preview {
+  margin-top: var(--sp-3);
+  font-size: 14px;
+  color: #DDE0E4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card__time { margin-top: 6px; font-size: 12px; color: var(--text-dim); }
+
+/* ---------- Переписка ---------- */
+
+.bubbles {
+  height: 58vh;
+  overflow-y: auto;
+  padding: var(--sp-1) var(--sp-1) var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.bubble {
+  max-width: 82%;
+  padding: 10px 13px;
+  border-radius: var(--r-lg);
+  font-size: 14px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+/* Своё сообщение: золотой оттенок, но приглушённый —
+   иначе экран переписки станет сплошным золотом. */
+.bubble--mine {
+  align-self: flex-end;
+  background: rgba(217,184,114,.13);
+  border-color: rgba(217,184,114,.28);
+  border-bottom-right-radius: var(--sp-1);
+}
+
+.bubble--other {
+  align-self: flex-start;
+  border-bottom-left-radius: var(--sp-1);
+}
+
+.bubble__who  { font-size: 11.5px; font-weight: 600; color: var(--text-muted); margin-bottom: 3px; }
+.bubble__time { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+/* ---------- Строка ввода сообщения ---------- */
+
+.composer { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-3); }
+.composer .input { margin-bottom: 0; }
+
+.composer__send {
+  flex-shrink: 0;
+  width: var(--control-h);
+  height: var(--control-h);
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--gold);
+  color: var(--gold-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.composer__send:active { transform: scale(.96); }
+.composer__send[disabled] { opacity: .45; }
+
+/* ---------- Ряд кнопок-действий в карточке ---------- */
+
+.actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+/* ---------- Раскрывающийся блок ---------- */
+
+.disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.disclosure__chev { color: var(--text-dim); display: flex; transition: transform .18s ease; }
+.disclosure[aria-expanded="true"] .disclosure__chev { transform: rotate(180deg); }
+
+/* ---------- Мелкая статистика (просмотры, отклики) ---------- */
+
+.stats { display: flex; gap: var(--sp-4); margin-top: var(--sp-2); }
+.stat  { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-dim); }
+
+/* ---------- Группа кандидатов ---------- */
+
+.group { border: 1px solid var(--line); border-radius: var(--r-xl); margin-bottom: var(--sp-3); overflow: hidden; }
+.group__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.group__body { display: none; padding: 0 var(--sp-4) var(--sp-2); background: var(--surface); }
+.group.is-open .group__body { display: block; }
+.group.is-open .disclosure__chev { transform: rotate(180deg); }
+
+.counters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--sp-2); }
+
+/* ---------- Кнопка подтверждения ---------- */
+
+.btn--ok { background: transparent; border-color: rgba(95,179,122,.4); color: var(--ok); }
+
+/* ---------- Оценка совпадения кандидата ---------- */
+
+.score { display: flex; align-items: center; gap: var(--sp-2); margin: 10px 0 6px; }
+
+.score__bar {
+  flex-grow: 1;
+  height: 4px;
+  border-radius: var(--r-round);
+  background: rgba(255,255,255,.08);
+  overflow: hidden;
+}
+.score__fill { height: 100%; border-radius: var(--r-round); background: var(--text-dim); }
+.score__fill--good { background: var(--ok); }
+.score__fill--mid  { background: var(--gold); }
+
+.score__val {
+  min-width: 36px;
+  text-align: right;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ---------- Пара «поле — значение» ---------- */
+
+.kv { display: flex; gap: var(--sp-2); font-size: 13px; line-height: 1.45; margin-top: 4px; }
+.kv__k { flex-shrink: 0; color: var(--text-dim); }
+.kv__v { color: var(--text-muted); min-width: 0; word-break: break-word; }
+
+/* ---------- Переключатель разделов ---------- */
+
+.tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  margin-bottom: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.tab {
+  flex-grow: 1;
+  height: 40px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.tab.is-active { background: var(--surface-soft); color: var(--text); font-weight: 600; }
+
+.hidden { display: none; }
+
+/* ---------- Переключатель (вкл/выкл) ---------- */
+
+.switch {
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  padding: 3px;
+  border: none;
+  border-radius: var(--r-round);
+  background: rgba(255,255,255,.12);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  cursor: pointer;
+  transition: background-color .15s ease;
+}
+.switch__knob {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: background-color .15s ease;
+}
+.switch[aria-checked="true"] { background: var(--gold); justify-content: flex-end; }
+.switch[aria-checked="true"] .switch__knob { background: var(--gold-ink); }
+.switch:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* ---------- Строка настройки ---------- */
+
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.setting-row__title { font-size: 14.5px; font-weight: 500; }
+.setting-row__hint  { margin-top: 2px; font-size: 12.5px; color: var(--text-muted); }
+
+.divider { height: 1px; background: var(--line); margin: 18px 0; }
+
+/* ---------- Кружки с ключевыми словами ---------- */
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip {
+  height: 26px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-round);
+  border: 1px solid var(--line-strong);
+  font-size: 12.5px;
+  color: #C9CDD4;
+}
+
+/* ---------- Карточка с акцентом ---------- */
+
+.card--accent { border-color: rgba(217,184,114,.28); }
+.card__label--accent { color: var(--gold); }
+
+/* Заголовок в шапке не переносится: кнопки по бокам сжимаются первыми */
+.page-header--nav .page-title { white-space: nowrap; }
+
+/* ---------- Выбранный вариант в списке-выборе ---------- */
+
+.list-action.is-selected {
+  border-color: var(--gold);
+  background: rgba(217,184,114,.06);
+}
+.list-action.is-selected .list-action__chev { color: var(--gold); }
+
+/* ---------- Предпросмотр карточки ---------- */
+
+.preview {
+  margin-top: var(--sp-5);
+  padding: var(--sp-4);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.preview__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  color: var(--text-dim);
+  margin-bottom: var(--sp-3);
+}
+
+.preview__name { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.preview__activity { margin-top: 3px; font-size: 13px; color: var(--text-muted); }
+.preview__about { margin-top: var(--sp-3); font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+.preview__empty { color: var(--text-dim); }
+
+.preview__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--sp-3);
+  font-size: 13px;
+  color: var(--gold);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+/* Прозрачная кнопка-значок: поделиться, избранное */
+.icon-ghost {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.icon-ghost:hover  { color: #C9CDD4; }
+.icon-ghost:active { transform: scale(.92); }
+
+/* ---------- Заглушка для тех, кто открыл вне Telegram ---------- */
+
+.stub {
+  max-width: 420px;
+  margin: 16vh auto 0;
+  padding: 0 var(--sp-4);
+  text-align: center;
+}
+
+.stub__icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto var(--sp-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(217,184,114,.12);
+  border: 1px solid rgba(217,184,114,.3);
+  color: var(--gold);
+}
+
+.stub__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: var(--sp-3);
+}
+
+.stub__text {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-5);
+}
+
+a.btn { text-decoration: none; }
+
+/* Полоса на страницах, которые и в браузере полезны */
+.tg-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 10px 14px;
+  margin-bottom: var(--sp-4);
+  border-radius: var(--r-md);
+  background: rgba(217,184,114,.1);
+  border: 1px solid rgba(217,184,114,.28);
+  font-size: 13px;
+  line-height: 1.4;
+  color: #E4D6B4;
+}
+.tg-notice .btn { flex-shrink: 0; }
+
+/* ---------- Внутри Telegram ---------- */
+
+/* «Назад» — родная кнопка в шапке Telegram. Своя на странице не нужна,
+   заголовок становится крупным и уходит влево, как в родных приложениях. */
+.in-telegram .page-header--nav .btn,
+.in-telegram .page-header--nav > span { display: none; }
+.in-telegram .page-header--nav .page-title { text-align: left; font-size: 25px; }
+
+/* ---------- Движение ---------- */
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Элементы появляются один за другим — задержку задаёт OsWork.stagger */
+.rise {
+  animation: rise .42s cubic-bezier(.2, .7, .2, 1) both;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+
+@keyframes page-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+body { animation: page-in .24s ease both; }
+
+.card--link:active { transform: scale(.985); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rise, body { animation: none; }
+}
+
+/* ---------- Переходы между страницами ----------
+   Браузер сам перетекает от старой страницы к новой. Направление
+   (вперёд / назад) выставляет общий скрипт. Где браузер этого не умеет,
+   правила ниже просто не срабатывают. */
+
+@view-transition { navigation: auto; }
+
+::view-transition-old(root) { animation: vt-out .2s ease both; }
+::view-transition-new(root) { animation: vt-in .32s cubic-bezier(.2, .7, .2, 1) both; }
+
+/* Назад — зеркально. Отдельным правилом: браузер, не знающий такого
+   селектора, отбросит только его, а не весь блок выше. */
+html:active-view-transition-type(back)::view-transition-old(root) { animation-name: vt-out-back; }
+html:active-view-transition-type(back)::view-transition-new(root) { animation-name: vt-in-back; }
+
+@keyframes vt-out      { to   { opacity: 0; transform: translateX(-18px); } }
+@keyframes vt-in       { from { opacity: 0; transform: translateX(28px);  } }
+@keyframes vt-out-back { to   { opacity: 0; transform: translateX(18px);  } }
+@keyframes vt-in-back  { from { opacity: 0; transform: translateX(-28px); } }
+
+/* При переходе с анимацией своё появление страницы не нужно —
+   иначе получается двойное затухание */
+.vt body { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none; }
+}
+
+/* ---------- Плавное раскрытие ---------- */
+
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows .32s cubic-bezier(.2, .7, .2, 1);
+}
+.collapse.is-open { grid-template-rows: 1fr; }
+.collapse__inner { overflow: hidden; min-height: 0; }
+
+/* ---------- Карточка профиля ---------- */
+
+.profile-card { display: flex; align-items: center; gap: 14px; }
+
+.avatar {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(217,184,114,.12);
+  border: 1px solid rgba(217,184,114,.3);
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.profile-card__name  { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.profile-card__role  { margin-top: 2px; font-size: 14px; font-weight: 500; color: var(--gold); }
+.profile-card__facts { margin-top: 3px; font-size: 12.5px; color: var(--text-muted); }
+
+/* ---------- Плитки сводки ---------- */
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.stat-tile {
+  padding: 12px 8px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  text-align: center;
+}
+
+.stat-tile__num {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.stat-tile__label { margin-top: 2px; font-size: 11.5px; color: var(--text-muted); }
+.stat-tile--accent { border-color: rgba(217,184,114,.3); }
+.stat-tile--accent .stat-tile__num { color: var(--gold); }
+
+/* ---------- Строка-ссылка в списке ---------- */
+
+.row-link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: opacity .12s ease;
+}
+.row-link:first-child { padding-top: 0; }
+.row-link:last-child  { padding-bottom: 0; border-bottom: none; }
+.row-link:active      { opacity: .65; }
+
+.row-link__body  { flex-grow: 1; min-width: 0; }
+.row-link__title { font-size: 15px; font-weight: 600; }
+
+.row-link__sub {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-link__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.row-link__salary { font-size: 13.5px; font-weight: 600; color: var(--gold); }
+.row-link__when   { font-size: 12px; color: var(--text-dim); }
+.row-link__chev   { flex-shrink: 0; color: var(--text-dim); display: flex; }
+
+/* ---------- Пустой список внутри карточки ---------- */
+
+.empty-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-2) var(--sp-1);
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+.empty-inline__icon { color: var(--text-dim); display: flex; }
+
+@media (prefers-reduced-motion: reduce) {
+  .collapse { transition: none; }
+}
+
+/* ---------- Плитки-кнопки ---------- */
+
+button.stat-tile {
+  position: relative;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color .15s ease, transform .1s ease;
+}
+button.stat-tile:hover  { border-color: var(--line-strong); }
+button.stat-tile:active { transform: scale(.97); }
+button.stat-tile:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.stat-tile__chev {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: flex;
+  color: var(--text-dim);
+}
+
+/* ---------- Карточка-событие: «Вас пригласили», «Новые отклики» ---------- */
+
+.card--event {
+  border-color: rgba(217,184,114,.34);
+  background: linear-gradient(180deg, rgba(217,184,114,.07), rgba(217,184,114,0) 70%), var(--surface);
+}
+
+.event__title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.event__sub   { margin-top: 3px; font-size: 13px; color: var(--text-muted); }
+.event__more  { margin-top: 10px; font-size: 12.5px; color: var(--text-dim); }
+
+/* ---------- Фильтры-кружки над списком ---------- */
+
+.filter-chips {
+  display: flex;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  margin: 0 -18px var(--sp-4);
+  padding: 0 18px 2px;
+  scrollbar-width: none;
+}
+.filter-chips::-webkit-scrollbar { display: none; }
+
+.filter-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--r-round);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.filter-chip.is-active { background: var(--text); border-color: var(--text); color: var(--bg); }
+.filter-chip__count { opacity: .65; font-variant-numeric: tabular-nums; }
+
+/* Убирание строки из списка */
+.row-link.is-leaving {
+  opacity: 0;
+  transform: translateX(16px);
+  transition: opacity .22s ease, transform .22s ease;
+}
+
+.icon-ghost.is-active { color: var(--gold); }
+.icon-ghost.is-active svg { fill: var(--gold); }

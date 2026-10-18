@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ossetia’s Work</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+
+<body>
+
+<div class="page-header">
+  <h1 class="page-title">Вакансии</h1>
+
+  <button class="icon-btn" type="button" onclick="goChats()" aria-label="Чаты">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.3-.6L3 21l1.7-5a8.2 8.2 0 0 1-.7-3.4 8.4 8.4 0 0 1 8.5-8.4 8.4 8.4 0 0 1 8.5 8.3Z"/></svg>
+    <span id="chatBadge" class="dot" style="display:none;"></span>
+  </button>
+</div>
+
+<div class="nav-row">
+  <button class="btn btn--quiet" type="button" onclick="goProfile()">Профиль</button>
+  <button class="btn btn--quiet" type="button" id="roleBtn" style="display:none;"></button>
+  <button class="btn btn--quiet" type="button" id="adminBtn" style="display:none;" onclick="goAdmin()">Админ</button>
+</div>
+
+<div class="field">
+  <span class="field__icon">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+  </span>
+  <label class="visually-hidden" for="jobSearch">Поиск вакансий</label>
+  <input id="jobSearch" placeholder="Поиск вакансий">
+</div>
+
+<label class="visually-hidden" for="cityFilter">Населённый пункт</label>
+<select id="cityFilter" class="select">
+  <option value="">Все города</option>
+</select>
+
+<div id="jobsList">
+  <div class="skeleton"></div>
+  <div class="skeleton"></div>
+</div>
+
+<script>
+OsWork.init();
+OsWork.noticeOutsideTelegram();
+OsWork.setBackButton({ visible:false });
+
+let currentMe = null;
+let favoriteIds = new Set();
+
+// Карточки плавно появляются только при первой отрисовке —
+// не при каждой букве в поиске
+let firstRender = true;
+
+const ICON_PIN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>`;
+const ICON_STAR = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 9.7l5.4-.8Z"/></svg>`;
+const ICON_SHARE = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="m8 7 4-4 4 4"/></svg>`;
+const ICON_CHECK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+
+async function loadMe(){
+  const res = await OsWork.apiFetch("/api/me");
+  if(!res.ok){
+    currentMe = null;
+    return;
+  }
+
+  currentMe = await res.json().catch(()=>null);
+}
+
+function canUseFavorites(){
+  if(!currentMe) return false;
+  return !!currentMe.has_resume && currentMe.active_mode === "applicant";
+}
+
+async function loadFavorites(){
+  favoriteIds = new Set();
+
+  if(!canUseFavorites()){
+    return;
+  }
+
+  const res = await OsWork.apiFetch("/api/favorites");
+  if(!res.ok){
+    return;
+  }
+
+  const data = await res.json().catch(()=>[]);
+  if(!Array.isArray(data)){
+    return;
+  }
+
+  data.forEach(item=>{
+    if(item && item.id){
+      favoriteIds.add(Number(item.id));
+    }
+  });
+}
+
+function isFavorite(jobId){
+  return favoriteIds.has(Number(jobId));
+}
+
+async function toggleFavorite(jobId, btn){
+  if(!canUseFavorites()){
+    return;
+  }
+
+  const jobNum = Number(jobId);
+  const alreadyFav = favoriteIds.has(jobNum);
+
+  btn.disabled = true;
+
+  const res = await OsWork.apiFetch(`/api/favorites/${jobNum}`, {
+    method: alreadyFav ? "DELETE" : "POST"
+  });
+
+  const data = await res.json().catch(()=>({}));
+
+  if(!res.ok){
+    btn.disabled = false;
+    alert(data.error || "Не удалось обновить избранное");
+    return;
+  }
+
+  if(alreadyFav){
+    favoriteIds.delete(jobNum);
+  } else {
+    favoriteIds.add(jobNum);
+  }
+
+  updateFavoriteButton(btn, jobNum);
+  btn.disabled = false;
+}
+
+function updateFavoriteButton(btn, jobId){
+  const active = isFavorite(jobId);
+  btn.innerHTML = ICON_STAR;
+  btn.classList.toggle("is-active", active);
+  btn.setAttribute("aria-label", active ? "Убрать из избранного" : "Добавить в избранное");
+}
+
+
+async function goProfile(){
+  await OsWork.apiFetch("/api/switch-mode", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ mode: "applicant" })
+  });
+  OsWork.go("/profile", { replace:true });
+}
+
+async function goEmployer(){
+  await OsWork.apiFetch("/api/switch-mode", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ mode: "employer" })
+  });
+  OsWork.go("/employer", { replace:true });
+}
+
+function goChats(){
+  OsWork.go("/chats", { replace:true });
+}
+
+async function loadUnreadCount(){
+  const badge = document.getElementById("chatBadge");
+  if(!badge) return;
+
+  const res = await OsWork.apiFetch("/api/chats/unread-count");
+  const data = await res.json().catch(()=>({}));
+
+  if(!res.ok){
+    badge.style.display = "none";
+    return;
+  }
+
+  const count = Number(data.unread_count || 0);
+
+  badge.style.display = count > 0 ? "block" : "none";
+  badge.title = count > 99 ? "99+" : String(count);
+}
+
+
+function goAdmin(){
+  return OsWork.go("/admin", { replace:true });
+}
+
+async function goApplicantCabinet(){
+  await OsWork.apiFetch("/api/switch-mode", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ mode: "applicant" })
+  });
+  OsWork.go("/applicant", { replace:true });
+}
+
+async function goEmployerCabinet(){
+  await OsWork.apiFetch("/api/switch-mode", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ mode: "employer" })
+  });
+  OsWork.go("/employer", { replace:true });
+}
+
+
+async function loadCities(){
+  const res = await OsWork.apiFetch("/api/locations");
+  if(!res.ok) return;
+
+  const cities = await res.json().catch(()=>[]);
+  if(!Array.isArray(cities)) return;
+
+  const select = document.getElementById("cityFilter");
+  select.innerHTML = '<option value="">Все города</option>';
+
+  cities.forEach(city=>{
+    const opt = document.createElement("option");
+    opt.value = city;
+    opt.textContent = city;
+    select.appendChild(opt);
+  });
+}
+
+async function apply(jobId, btn, msgBox){
+  btn.disabled = true;
+  btn.textContent = "Отправка...";
+
+  const res = await OsWork.apiFetch("/api/apply", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ job_id: jobId })
+  });
+
+  const data = await res.json().catch(()=>({}));
+
+  if(!res.ok){
+    OsWork.haptic("error");
+    btn.disabled = false;
+    btn.textContent = "Откликнуться";
+    msgBox.className = "msg bad";
+    msgBox.textContent = data.error || "Ошибка";
+    return;
+  }
+
+  OsWork.haptic("success");
+  btn.classList.add("btn--done");
+  btn.textContent = "Вы откликнулись";
+  msgBox.className = "msg ok";
+  msgBox.textContent = "Работодатель уведомлён";
+}
+
+
+function sectionLabel(text){
+  const el = document.createElement("div");
+  el.className = "section-label";
+  el.innerHTML = `<span>${text}</span>`;
+  return el;
+}
+
+
+async function loadJobs(){
+  const city = document.getElementById("cityFilter").value;
+  const q = document.getElementById("jobSearch").value;
+
+  let params = new URLSearchParams();
+
+  if(city){
+    params.append("city", city);
+  }
+
+  if(q){
+    params.append("q", q);
+  }
+
+  let url = "/api/jobs";
+
+  if(params.toString()){
+    url += "?" + params.toString();
+  }
+
+  const res = await OsWork.apiFetch(url);
+  const jobs = await res.json().catch(()=>[]);
+  jobs.sort((a, b) => Number(a.applied) - Number(b.applied));
+
+  const list = document.getElementById("jobsList");
+  list.innerHTML = "";
+
+  if(!Array.isArray(jobs) || !jobs.length){
+    list.innerHTML = `
+      <div class="empty">
+        Вакансий нет.<br>Попробуйте изменить фильтр или поиск.
+      </div>
+    `;
+    return;
+  }
+
+  let appliedSectionShown = false;
+  let newSectionShown = false;
+
+  jobs.forEach(j=>{
+
+    if(!j.applied && !newSectionShown){
+      list.appendChild(sectionLabel("НОВЫЕ ВАКАНСИИ"));
+      newSectionShown = true;
+    }
+
+    if(j.applied && !appliedSectionShown){
+      list.appendChild(sectionLabel("ВЫ УЖЕ ОТКЛИКНУЛИСЬ"));
+      appliedSectionShown = true;
+    }
+
+    const card = document.createElement("article");
+    card.className = "card card--link";
+
+    // Нажатие на карточку открывает вакансию целиком.
+    // Кнопки внутри карточки (отклик, избранное, поделиться) — своё действие.
+    card.addEventListener("click", (e)=>{
+      if(e.target.closest("button, a")) return;
+      OsWork.go(`/job/${Number(j.id)}`);
+    });
+
+    const msgBox = document.createElement("div");
+
+    const showFavButton = canUseFavorites();
+
+    const place = [j.city, j.address].filter(Boolean).map(esc).join(" · ");
+
+    const company = j.company_name
+      ? `<div class="card__sub">
+           <span>${esc(j.company_name)}</span>
+           ${j.verified ? `<span class="verified">${ICON_CHECK}проверен</span>` : ""}
+         </div>`
+      : "";
+
+    const description = (j.description || "").trim();
+    const descriptionShort = description
+      ? esc(description.substring(0,160)) + (description.length > 160 ? "…" : "")
+      : "Описание не указано";
+
+    card.innerHTML = `
+      <div class="card__head">
+        <div style="min-width:0;">
+          <h2 class="card__title">${esc(j.title)}</h2>
+          ${company}
+        </div>
+        <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;">
+          <button class="icon-ghost" type="button" data-share-id="${j.id}" aria-label="Поделиться вакансией">${ICON_SHARE}</button>
+          ${showFavButton ? `<button class="favorite-btn" type="button" data-job-id="${j.id}"></button>` : ""}
+        </div>
+      </div>
+
+      ${j.salary_text ? `<div class="card__salary">${esc(j.salary_text)}</div>` : ""}
+
+      ${place ? `<div class="meta">${ICON_PIN}<span>${place}</span></div>` : ""}
+
+      <p class="card__text">${descriptionShort}</p>
+
+      ${j.created_at ? `<div class="card__time" style="margin:-6px 0 12px;">${esc(OsWork.timeAgo(j.created_at))}</div>` : ""}
+    `;
+
+    const shareBtn = card.querySelector("[data-share-id]");
+    if(shareBtn){
+      shareBtn.onclick = ()=>OsWork.shareJob(j.id, j.title);
+    }
+
+    if(showFavButton){
+      const favBtn = card.querySelector(".favorite-btn");
+      updateFavoriteButton(favBtn, j.id);
+      favBtn.onclick = ()=>toggleFavorite(j.id, favBtn);
+    }
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn--primary";
+    btn.textContent = j.applied ? "Вы уже откликнулись" : "Откликнуться";
+
+    if(j.applied){
+      btn.disabled = true;
+      btn.classList.add("btn--done");
+    } else if(!OsWork.isInsideTelegram()){
+      // В браузере отклик невозможен: пропуска нет. Ведём туда, где он есть,
+      // сразу на эту вакансию.
+      btn.textContent = "Откликнуться в Telegram";
+      btn.onclick = ()=>{ window.location.href = OsWork.botLink() + "?start=job_" + Number(j.id); };
+    } else {
+      btn.onclick = ()=>apply(j.id, btn, msgBox);
+    }
+
+    card.appendChild(btn);
+    card.appendChild(msgBox);
+    list.appendChild(card);
+  });
+
+  if(firstRender){
+    OsWork.stagger(list.querySelectorAll(".card"));
+    firstRender = false;
+  }
+}
+
+
+function renderTopButtons(){
+  const adminBtn = document.getElementById("adminBtn");
+  const roleBtn = document.getElementById("roleBtn");
+
+  adminBtn.style.display = "none";
+  roleBtn.style.display = "none";
+  roleBtn.onclick = null;
+  roleBtn.textContent = "";
+
+  if(!currentMe){
+    return;
+  }
+
+  if(currentMe.is_admin){
+    adminBtn.style.display = "inline-flex";
+  }
+
+  if(currentMe.active_mode === "employer" && currentMe.has_employer_profile){
+    roleBtn.style.display = "inline-flex";
+    roleBtn.textContent = "Работодатель";
+    roleBtn.onclick = goEmployerCabinet;
+    return;
+  }
+
+  if(currentMe.active_mode === "applicant" && currentMe.has_resume){
+    roleBtn.style.display = "inline-flex";
+    roleBtn.textContent = "Соискатель";
+    roleBtn.onclick = goApplicantCabinet;
+    return;
+  }
+
+  if(currentMe.has_employer_profile){
+    roleBtn.style.display = "inline-flex";
+    roleBtn.textContent = "Работодатель";
+    roleBtn.onclick = goEmployerCabinet;
+    return;
+  }
+
+  if(currentMe.has_resume){
+    roleBtn.style.display = "inline-flex";
+    roleBtn.textContent = "Соискатель";
+    roleBtn.onclick = goApplicantCabinet;
+  }
+}
+
+
+async function refreshTopState(){
+  await loadMe();
+  renderTopButtons();
+  await loadFavorites();
+  await loadUnreadCount();
+}
+
+document.addEventListener("DOMContentLoaded", async ()=>{
+  await refreshTopState();
+  await loadCities();
+  await loadJobs();
+
+  document.getElementById("cityFilter").addEventListener("change", loadJobs);
+  document.getElementById("jobSearch").addEventListener("input", loadJobs);
+});
+
+
+window.addEventListener("focus", async ()=>{
+  await refreshTopState();
+  await loadJobs();
+});
+
+document.addEventListener("visibilitychange", async ()=>{
+  if(document.visibilityState === "visible"){
+    await refreshTopState();
+    await loadJobs();
+  }
+});
+
+
+</script>
+</body>
+</html>

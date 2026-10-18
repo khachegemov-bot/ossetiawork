@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Избранное</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" id="btnBack" type="button">Назад</button>
+  <h1 class="page-title">Избранное</h1>
+  <span style="width:76px"></span>
+</div>
+
+<section class="card">
+  <div id="list"><div class="skeleton" style="height:64px;margin:0;"></div></div>
+</section>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+
+OsWork.setBackButton({ visible:true, fallbackUrl:"/applicant", preferReferrer:true });
+
+document.getElementById("btnBack").onclick = () => OsWork.go("/applicant", { replace:true, back:true });
+
+const ICON_STAR = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 9.7l5.4-.8Z"/></svg>`;
+const ICON_STAR_BIG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 9.7l5.4-.8Z"/></svg>`;
+
+let favs = [];
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function renderEmpty(){
+  document.getElementById("list").innerHTML = `
+    <div class="empty-inline">
+      <span class="empty-inline__icon">${ICON_STAR_BIG}</span>
+      <span>Нажмите звёздочку на вакансии — она сохранится здесь</span>
+      <button class="btn btn--quiet btn--sm" type="button" id="btnBrowse">Смотреть вакансии</button>
+    </div>`;
+
+  document.getElementById("btnBrowse").onclick = () => OsWork.go("/", { replace:true, back:true });
+}
+
+function render(){
+  const box = document.getElementById("list");
+
+  if(!favs.length){
+    renderEmpty();
+    return;
+  }
+
+  box.innerHTML = favs.map(j => {
+    const sub = [j.company_name, j.city].filter(Boolean).map(esc).join(" · ");
+    const when = OsWork.timeAgo(j.created_at);
+
+    return `
+      <div class="row-link" data-job="${Number(j.id)}">
+        <div class="row-link__body">
+          <div class="row-link__title">${esc(j.title)}</div>
+          ${sub ? `<div class="row-link__sub">${sub}</div>` : ""}
+          <div class="row-link__foot">
+            ${j.salary_text ? `<span class="row-link__salary">${esc(j.salary_text)}</span>` : ""}
+            ${when ? `<span class="row-link__when">${esc(when)}</span>` : ""}
+          </div>
+        </div>
+        <button class="icon-ghost is-active" type="button" data-unfav="${Number(j.id)}" aria-label="Убрать из избранного">${ICON_STAR}</button>
+      </div>`;
+  }).join("");
+
+  box.querySelectorAll("[data-unfav]").forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      removeFavorite(Number(btn.getAttribute("data-unfav")), btn.closest(".row-link"));
+    };
+  });
+
+  box.querySelectorAll(".row-link[data-job]").forEach(row => {
+    row.onclick = () => OsWork.go(`/job/${Number(row.getAttribute("data-job"))}`);
+  });
+}
+
+async function removeFavorite(jobId, row){
+  const r = await OsWork.apiFetch(`/api/favorites/${jobId}`, { method: "DELETE" });
+
+  if(!r.ok){
+    OsWork.haptic("error");
+    return;
+  }
+
+  OsWork.haptic("select");
+
+  // строка мягко уезжает, потом список перерисовывается без неё
+  row.classList.add("is-leaving");
+  setTimeout(() => {
+    favs = favs.filter(j => Number(j.id) !== jobId);
+    render();
+  }, 230);
+}
+
+(async function init(){
+  try{
+    const r = await OsWork.apiFetch("/api/favorites");
+    const data = r.ok ? await r.json() : [];
+    favs = Array.isArray(data) ? data : [];
+  }catch(e){
+    favs = [];
+  }
+
+  render();
+  OsWork.stagger(document.querySelectorAll("#list .row-link"));
+})();
+</script>
+</body>
+</html>

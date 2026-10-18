@@ -1,0 +1,4 @@
+# Ежедневный бэкап базы Ossetia Work в 04:00 UTC (07:00 по Владикавказу)
+0 4 * * * /root/backup_db.sh
+# Еженедельная отправка свежей копии в Telegram, воскресенье 04:30 UTC
+30 4 * * 0 /root/backup_to_telegram.sh

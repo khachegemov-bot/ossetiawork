@@ -1,0 +1,28 @@
+[DEFAULT]
+banaction = iptables-ipset-proto6
+
+# Свои адреса не банить никогда: сам сервер и домашний адрес владельца.
+# Если домашний адрес сменится — добавить новый сюда.
+ignoreip = 127.0.0.1/8 ::1 <SERVER_IP> <ADMIN_IP>
+
+# Три попытки за 10 минут — бан на сутки
+maxretry = 3
+findtime = 10m
+bantime  = 1d
+
+# Повторным нарушителям каждый раз вдвое дольше: сутки, двое, четверо… до месяца
+bantime.increment = true
+bantime.factor    = 2
+bantime.maxtime   = 30d
+
+[sshd]
+enabled = true
+
+# Сканеры сайта: две попытки найти .env, .git или WordPress — бан на сутки на весь сайт
+[nginx-probe]
+enabled  = true
+port     = http,https
+filter   = nginx-probe
+logpath  = /var/log/nginx/access.log
+maxretry = 2
+findtime = 1h

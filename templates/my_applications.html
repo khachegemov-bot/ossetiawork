@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Мои отклики</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" id="btnBack" type="button">Назад</button>
+  <h1 class="page-title">Мои отклики</h1>
+  <span style="width:76px"></span>
+</div>
+
+<div class="filter-chips" id="filters"></div>
+
+<section class="card">
+  <div id="list"><div class="skeleton" style="height:64px;margin:0;"></div></div>
+</section>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+
+OsWork.setBackButton({ visible:true, fallbackUrl:"/applicant", preferReferrer:true });
+
+document.getElementById("btnBack").onclick = () => OsWork.go("/applicant", { replace:true, back:true });
+
+const ICON_CHAT = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.3-.6L3 21l1.7-5a8.2 8.2 0 0 1-.7-3.4 8.4 8.4 0 0 1 8.5-8.4 8.4 8.4 0 0 1 8.5 8.3Z"/></svg>`;
+const ICON_SEARCH = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>`;
+
+// Фильтры. «Приглашения» объединяют «позвали на собеседование» и «приняли»
+const FILTERS = [
+  { key: "all",      label: "Все",             match: () => true },
+  { key: "invited",  label: "Приглашения",     match: a => a.status === "interview" || a.status === "accepted" },
+  { key: "new",      label: "На рассмотрении", match: a => a.status === "new" },
+  { key: "rejected", label: "Отказы",          match: a => a.status === "rejected" }
+];
+
+let allApps = [];
+let current = new URLSearchParams(location.search).get("status") || "all";
+if(!FILTERS.some(f => f.key === current)) current = "all";
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function badge(status){
+  if(status === "new")       return `<span class="tag">На рассмотрении</span>`;
+  if(status === "interview") return `<span class="tag tag--wait">Приглашение</span>`;
+  if(status === "accepted")  return `<span class="tag tag--ok">Вас приняли</span>`;
+  if(status === "rejected")  return `<span class="tag tag--bad">Отказ</span>`;
+  return `<span class="tag">${esc(status)}</span>`;
+}
+
+function renderFilters(){
+  const box = document.getElementById("filters");
+
+  box.innerHTML = FILTERS.map(f => {
+    const count = allApps.filter(f.match).length;
+    return `<button class="filter-chip ${f.key === current ? "is-active" : ""}" type="button" data-key="${f.key}">
+      ${f.label}<span class="filter-chip__count">${count}</span>
+    </button>`;
+  }).join("");
+
+  box.querySelectorAll("[data-key]").forEach(b => {
+    b.onclick = () => {
+      current = b.getAttribute("data-key");
+
+      // адрес меняем без перезагрузки: «Назад» из вакансии вернёт на тот же фильтр
+      const url = current === "all" ? location.pathname : location.pathname + "?status=" + current;
+      // Адрес обновляем, чтобы «Назад» из вакансии вернул на тот же фильтр.
+      // Это удобство: если встроенный браузер запретит — фильтр всё равно работает.
+      try { history.replaceState(null, "", url); } catch (e) {}
+
+      renderFilters();
+      renderList();
+    };
+  });
+}
+
+function renderList(){
+  const box = document.getElementById("list");
+  const filter = FILTERS.find(f => f.key === current);
+  const items = allApps.filter(filter.match);
+
+  if(!items.length){
+    const text = current === "all"
+      ? "Вы пока никуда не откликались"
+      : current === "invited"
+        ? "Приглашений пока нет. Ответ работодателя придёт в чат с ботом."
+        : current === "new"
+          ? "Нет откликов, которые ждут ответа"
+          : "Отказов нет";
+
+    box.innerHTML = `
+      <div class="empty-inline">
+        <span class="empty-inline__icon">${ICON_SEARCH}</span>
+        <span>${text}</span>
+        ${current === "all" ? `<button class="btn btn--quiet btn--sm" type="button" id="btnBrowse">Смотреть вакансии</button>` : ""}
+      </div>`;
+
+    const browse = document.getElementById("btnBrowse");
+    if(browse) browse.onclick = () => OsWork.go("/", { replace:true, back:true });
+    return;
+  }
+
+  box.innerHTML = items.map(a => {
+    const sub = [a.company_name, a.city].filter(Boolean).map(esc).join(" · ");
+    const when = OsWork.timeAgo(a.created_at);
+
+    return `
+      <div class="row-link" data-job="${Number(a.job_id)}">
+        <div class="row-link__body">
+          <div class="row-link__title">${esc(a.title)}</div>
+          ${sub ? `<div class="row-link__sub">${sub}</div>` : ""}
+          <div class="row-link__foot">
+            ${badge(a.status)}
+            ${when ? `<span class="row-link__when">${esc(when)}</span>` : ""}
+          </div>
+        </div>
+        <button class="icon-ghost" type="button" data-chat="${Number(a.application_id)}" aria-label="Открыть переписку">${ICON_CHAT}</button>
+      </div>`;
+  }).join("");
+
+  box.querySelectorAll("[data-chat]").forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      OsWork.go(`/chat/${Number(btn.getAttribute("data-chat"))}`);
+    };
+  });
+
+  box.querySelectorAll(".row-link[data-job]").forEach(row => {
+    row.onclick = () => OsWork.go(`/job/${Number(row.getAttribute("data-job"))}`);
+  });
+
+  OsWork.stagger(box.querySelectorAll(".row-link"));
+}
+
+(async function init(){
+  try{
+    const r = await OsWork.apiFetch("/api/applicant/applications");
+    const data = r.ok ? await r.json() : [];
+    allApps = Array.isArray(data) ? data : [];
+  }catch(e){
+    allApps = [];
+  }
+
+  renderFilters();
+  renderList();
+})();
+</script>
+</body>
+</html>

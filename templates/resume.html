@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Моё резюме</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" id="btnBack" type="button">Назад</button>
+  <h1 class="page-title">Резюме</h1>
+  <span style="width:76px"></span>
+</div>
+
+<section class="card">
+  <div class="card__label">КТО ВЫ</div>
+
+  <label class="form-label" for="full_name">Фамилия, имя и отчество</label>
+  <input class="input" id="full_name" placeholder="Например, Дзагоев Алан Ахсарбекович">
+
+  <label class="form-label" for="age">Возраст</label>
+  <input class="input" id="age" type="number" inputmode="numeric" placeholder="25">
+
+  <label class="form-label" for="city">Населённый пункт</label>
+  <select class="select" id="city">
+    <option value="">Выберите город или село</option>
+  </select>
+
+  <div class="divider"></div>
+
+  <div class="card__label">КАКУЮ РАБОТУ ИЩЕТЕ</div>
+
+  <label class="form-label" for="position">Желаемая должность</label>
+  <input class="input" id="position" placeholder="Продавец-консультант">
+
+  <label class="form-label" for="employment_type">Занятость</label>
+  <input class="input" id="employment_type" placeholder="Полная занятость, подработка, сменный график">
+
+  <div class="divider"></div>
+
+  <div class="card__label">ОПЫТ И НАВЫКИ</div>
+
+  <label class="form-label" for="experience">Опыт работы</label>
+  <input class="input" id="experience" placeholder="2 года продавцом в магазине">
+
+  <label class="form-label" for="skills">Навыки</label>
+  <input class="input" id="skills" placeholder="Касса, 1С, работа с людьми">
+
+  <label class="form-label" for="about">О себе</label>
+  <textarea class="textarea" id="about" placeholder="Что важно знать работодателю: пунктуальность, права категории B, готовность к обучению"></textarea>
+
+  <div class="divider"></div>
+
+  <div class="card__label">КОНТАКТЫ</div>
+
+  <label class="form-label" for="phone">Телефон</label>
+  <input class="input" id="phone" type="tel" inputmode="tel" placeholder="+7 900 000-00-00">
+  <p class="note" style="margin-top:-4px;">Работодатель увидит номер только после вашего отклика.</p>
+
+  <div class="preview">
+    <div class="preview__label">ТАК ВАС УВИДИТ РАБОТОДАТЕЛЬ</div>
+    <div id="previewBox"></div>
+  </div>
+
+  <button class="btn btn--primary" id="btnSave" type="button" style="margin-top:16px;">Сохранить резюме</button>
+  <div id="msg" class="msg msg--center"></div>
+</section>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+// Дальше идти нельзя — элементов, к которым обращается код ниже, уже нет.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+OsWork.setBackButton({ visible:true, fallbackUrl:"/" });
+
+const ICON_PIN = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>`;
+const ICON_PHONE = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3h3l1.5 4-2 1.5a12 12 0 0 0 6.5 6.5L17 13l4 1.5v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4 6.2 2 2 0 0 1 6 4Z"/></svg>`;
+
+document.getElementById("btnBack").addEventListener("click", () => OsWork.safeBack("/"));
+document.getElementById("btnSave").addEventListener("click", saveResume);
+
+OsWork.attachPhoneMask(document.getElementById("phone"));
+
+// Внутри Telegram «Сохранить» — родная кнопка внизу экрана, всегда под рукой
+const resumeMain = OsWork.mainButton({ text: "Сохранить резюме", onClick: saveResume });
+if(resumeMain) document.getElementById("btnSave").style.display = "none";
+
+// Начал заполнять и случайно смахнул — Telegram переспросит
+OsWork.trackChanges(document.querySelector("section.card"));
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function ageWord(n){
+  const num = Number(n);
+  if(!num) return "";
+  const last = num % 10;
+  const twoLast = num % 100;
+  if(twoLast >= 11 && twoLast <= 14) return num + " лет";
+  if(last === 1) return num + " год";
+  if(last >= 2 && last <= 4) return num + " года";
+  return num + " лет";
+}
+
+function kvLine(key, value){
+  return value
+    ? `<div class="kv"><span class="kv__k">${key}:</span><span class="kv__v">${esc(value)}</span></div>`
+    : "";
+}
+
+function renderPreview(){
+  const name = document.getElementById("full_name").value.trim();
+  const position = document.getElementById("position").value.trim();
+  const city = document.getElementById("city").value.trim();
+  const age = document.getElementById("age").value.trim();
+  const experience = document.getElementById("experience").value.trim();
+  const skills = document.getElementById("skills").value.trim();
+  const employment = document.getElementById("employment_type").value.trim();
+  const about = document.getElementById("about").value.trim();
+  const phone = document.getElementById("phone").value.trim();
+
+  const facts = [ageWord(age), city].filter(Boolean).map(esc).join(" · ");
+
+  document.getElementById("previewBox").innerHTML = `
+    <div class="preview__name ${name ? "" : "preview__empty"}">${name ? esc(name) : "Фамилия, имя и отчество"}</div>
+
+    ${position
+      ? `<div class="card__salary" style="font-size:17px;margin:8px 0 6px;">${esc(position)}</div>`
+      : `<div class="preview__activity preview__empty" style="margin-top:6px;">Желаемая должность</div>`}
+
+    ${facts ? `<div class="meta">${ICON_PIN}<span>${facts}</span></div>` : ""}
+    ${phone ? `<div class="meta">${ICON_PHONE}<span>${esc(phone)}</span></div>` : ""}
+
+    ${kvLine("Занятость", employment)}
+    ${kvLine("Опыт", experience)}
+    ${kvLine("Навыки", skills)}
+
+    ${about ? `<div class="preview__about">${esc(about)}</div>` : ""}
+  `;
+}
+
+let CITY_SET = new Set();
+
+async function fillCities(){
+  const sel = document.getElementById("city");
+  sel.innerHTML = `<option value="">Загрузка...</option>`;
+
+  try{
+    const r = await OsWork.apiFetch("/api/locations");
+    if(!r.ok) throw new Error("locations bad status");
+    const cities = await r.json();
+
+    const items = Array.isArray(cities) ? cities : [];
+    CITY_SET = new Set(items);
+
+    sel.innerHTML = `
+      <option value="">Выберите город или село</option>
+      ${items.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("")}
+    `;
+  }catch(e){
+    CITY_SET = new Set();
+    sel.innerHTML = `<option value="">Не удалось загрузить города</option>`;
+  }
+}
+
+async function loadResume(){
+  const r = await OsWork.apiFetch("/api/resume");
+  const data = await r.json().catch(()=>({}));
+
+  if(data.exists){
+    const x = data.resume || {};
+    full_name.value = x.full_name || "";
+    age.value = (x.age ?? "") === null ? "" : (x.age ?? "");
+    city.value = x.city || "";
+    position.value = x.position || "";
+    experience.value = x.experience || "";
+    skills.value = x.skills || "";
+    about.value = x.about || "";
+    phone.value = OsWork.formatPhone(x.phone || "");
+    employment_type.value = x.employment_type || "";
+
+    document.getElementById("btnSave").textContent = "Сохранить изменения";
+    if(resumeMain) resumeMain.setText("Сохранить изменения");
+  }
+
+  renderPreview();
+}
+
+function validateCity(){
+  const v = (city.value || "").trim();
+  if(!v) return "Выберите город или село";
+  if(CITY_SET.size > 0 && !CITY_SET.has(v)) return "Выберите город из списка";
+  return null;
+}
+
+async function saveResume(){
+  const msg = document.getElementById("msg");
+  const btn = document.getElementById("btnSave");
+  const label = btn.textContent;
+
+  msg.className = "msg msg--center";
+  msg.textContent = "";
+
+  const cityErr = validateCity();
+  if(cityErr){
+    OsWork.haptic("error");
+    msg.className = "msg msg--center bad";
+    msg.textContent = cityErr;
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Сохранение...";
+  if(resumeMain) resumeMain.busy(true);
+
+  const payload = {
+    full_name: full_name.value.trim(),
+    age: age.value.trim(),
+    city: city.value.trim(),
+    position: position.value.trim(),
+    experience: experience.value.trim(),
+    skills: skills.value.trim(),
+    about: about.value.trim(),
+    phone: phone.value.trim(),
+    employment_type: employment_type.value.trim()
+  };
+
+  const res = await OsWork.apiFetch("/api/resume",{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await res.json().catch(()=>({}));
+
+  btn.disabled = false;
+  btn.textContent = label;
+  if(resumeMain) resumeMain.busy(false);
+
+  if(!res.ok){
+    OsWork.haptic("error");
+    msg.className = "msg msg--center bad";
+    msg.textContent = result.error || "Ошибка";
+    return;
+  }
+
+  OsWork.haptic("success");
+  OsWork.setDirty(false);
+  if(resumeMain) resumeMain.done("Сохранено");
+  btn.classList.add("btn--done");
+  btn.textContent = "Сохранено";
+  msg.className = "msg msg--center ok";
+  msg.textContent = "Резюме сохранено";
+  setTimeout(()=>OsWork.go("/", { replace:true }), 600);
+}
+
+["full_name", "age", "position", "employment_type", "experience", "skills", "about", "phone"].forEach(id=>{
+  document.getElementById(id).addEventListener("input", renderPreview);
+});
+document.getElementById("city").addEventListener("change", renderPreview);
+
+(async function init(){
+  await fillCities();
+  await loadResume();
+})();
+</script>
+
+</body>
+</html>

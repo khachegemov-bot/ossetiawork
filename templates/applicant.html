@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+
+<title>Личный кабинет</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" id="btnJobs" type="button">Назад</button>
+  <h1 class="page-title">Мой кабинет</h1>
+  <span style="width:76px"></span>
+</div>
+
+<!-- Кто ты: карточка резюме -->
+<section class="card" id="profileBox">
+  <div class="skeleton" style="height:64px;margin:0;"></div>
+</section>
+
+<!-- Сводка -->
+<div class="stat-tiles" id="statsBox"></div>
+
+<!-- Главное событие: позвали на собеседование. Показывается, только если позвали -->
+<div id="inviteBox"></div>
+
+<!-- Настройки уведомлений: свёрнуты в одну строку, раскрываются по нажатию -->
+<section class="card" id="subsCard">
+  <button class="disclosure" type="button" id="subsToggle" aria-expanded="false" aria-controls="subsCollapse" style="padding:0;">
+    <span style="min-width:0;">
+      <span class="setting-row__title" style="display:block;">Уведомления о вакансиях</span>
+      <span class="setting-row__hint" id="subsSummary" style="display:block;font-weight:400;">Загрузка...</span>
+    </span>
+    <span class="disclosure__chev">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </span>
+  </button>
+
+  <div class="collapse" id="subsCollapse">
+    <div class="collapse__inner">
+      <div id="subsSettings" style="padding-top:18px;">
+
+        <div class="setting-row">
+          <div style="min-width:0;">
+            <div class="setting-row__title">Новые вакансии в городе</div>
+            <div class="setting-row__hint">Сообщим в Telegram сразу, как появится</div>
+          </div>
+          <button class="switch" type="button" id="cityToggle" role="switch" aria-checked="false" aria-label="Уведомления о новых вакансиях в городе">
+            <span class="switch__knob"></span>
+          </button>
+        </div>
+
+        <label class="form-label" for="subCity" style="margin-top:14px;">Населённый пункт</label>
+        <select class="select" id="subCity">
+          <option value="">Выберите город или село</option>
+        </select>
+
+        <div class="divider"></div>
+
+        <div class="setting-row">
+          <div style="min-width:0;">
+            <div class="setting-row__title">Только по ключевым словам</div>
+            <div class="setting-row__hint">Чтобы не приходило всё подряд</div>
+          </div>
+          <button class="switch" type="button" id="kwToggle" role="switch" aria-checked="false" aria-label="Уведомления только по ключевым словам">
+            <span class="switch__knob"></span>
+          </button>
+        </div>
+
+        <label class="form-label" for="subKeywords" style="margin-top:14px;">Слова через запятую</label>
+        <input class="input" id="subKeywords" placeholder="продавец, кассир, склад">
+        <div class="chips" id="kwChips"></div>
+
+        <button class="btn btn--primary" id="btnSaveSubs" type="button" style="margin-top:16px;">Сохранить</button>
+        <div id="subsMsg"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+// Дальше идти нельзя — элементов, к которым обращается код ниже, уже нет.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+
+OsWork.setBackButton({ visible:true, fallbackUrl:"/" });
+
+
+const ICON_CHEV_SM = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>`;
+
+document.getElementById("btnJobs")
+  .addEventListener("click", () => OsWork.go("/", { replace:true, back:true }));
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function plural(n, one, few, many){
+  const last = n % 10, twoLast = n % 100;
+  if(twoLast >= 11 && twoLast <= 14) return many;
+  if(last === 1) return one;
+  if(last >= 2 && last <= 4) return few;
+  return many;
+}
+
+function ageWord(n){
+  const num = Number(n);
+  return num ? num + " " + plural(num, "год", "года", "лет") : "";
+}
+
+// Статус глазами соискателя: «Новый» — это язык работодателя
+function badge(status){
+  if(status === "new")       return `<span class="tag">На рассмотрении</span>`;
+  if(status === "interview") return `<span class="tag tag--wait">Приглашение</span>`;
+  if(status === "accepted")  return `<span class="tag tag--ok">Вас приняли</span>`;
+  if(status === "rejected")  return `<span class="tag tag--bad">Отказ</span>`;
+  return `<span class="tag">${esc(status)}</span>`;
+}
+
+
+/* ===== Карточка профиля ===== */
+
+function initials(fullName){
+  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map(p => p[0].toUpperCase()).join("") || "?";
+}
+
+function renderProfile(resume){
+  const box = document.getElementById("profileBox");
+
+  if(!resume){
+    box.innerHTML = `
+      <div class="profile-card">
+        <div class="avatar">?</div>
+        <div style="min-width:0;flex-grow:1;">
+          <div class="profile-card__name">Резюме не заполнено</div>
+          <div class="profile-card__facts">Без резюме откликнуться не получится</div>
+        </div>
+      </div>
+      <button class="btn btn--primary" type="button" id="btnResume" style="margin-top:14px;">Заполнить резюме</button>
+    `;
+  } else {
+    const facts = [ageWord(resume.age), resume.city].filter(Boolean).map(esc).join(" · ");
+
+    box.innerHTML = `
+      <div class="profile-card">
+        <div class="avatar">${esc(initials(resume.full_name))}</div>
+        <div style="min-width:0;flex-grow:1;">
+          <div class="profile-card__name">${esc(resume.full_name || "Без имени")}</div>
+          ${resume.position ? `<div class="profile-card__role">${esc(resume.position)}</div>` : ""}
+          ${facts ? `<div class="profile-card__facts">${facts}</div>` : ""}
+        </div>
+      </div>
+      <button class="btn btn--quiet btn--block btn--sm" type="button" id="btnResume" style="margin-top:14px;">Изменить резюме</button>
+    `;
+  }
+
+  document.getElementById("btnResume").onclick = () => OsWork.go("/resume");
+}
+
+
+/* ===== Сводка ===== */
+
+function renderStats(apps, favs){
+  const invited = apps.filter(a => a.status === "interview" || a.status === "accepted").length;
+
+  const tile = (num, label, accent, href) => `
+    <button class="stat-tile ${accent ? "stat-tile--accent" : ""}" type="button" data-href="${href}">
+      <span class="stat-tile__chev">${ICON_CHEV_SM}</span>
+      <div class="stat-tile__num">${num}</div>
+      <div class="stat-tile__label">${label}</div>
+    </button>`;
+
+  const box = document.getElementById("statsBox");
+
+  box.innerHTML =
+    tile(apps.length, plural(apps.length, "отклик", "отклика", "откликов"), false, "/my/applications") +
+    tile(invited, plural(invited, "приглашение", "приглашения", "приглашений"), invited > 0, "/my/applications?status=invited") +
+    tile(favs.length, "в избранном", false, "/my/favorites");
+
+  box.querySelectorAll("[data-href]").forEach(b => {
+    b.onclick = () => OsWork.go(b.getAttribute("data-href"));
+  });
+}
+
+
+/* ===== Главное событие: приглашение ===== */
+
+function renderInvite(apps){
+  const box = document.getElementById("inviteBox");
+  const invites = apps.filter(a => a.status === "interview" || a.status === "accepted");
+
+  if(!invites.length){
+    box.innerHTML = "";
+    return;
+  }
+
+  const a = invites[0];
+  const sub = [a.company_name, a.city].filter(Boolean).map(esc).join(" · ");
+  const rest = invites.length - 1;
+  const label = a.status === "accepted" ? "ВАС ПРИНЯЛИ" : "ВАС ПРИГЛАСИЛИ";
+
+  box.innerHTML = `
+    <section class="card card--event">
+      <div class="card__label card__label--accent">${label}</div>
+      <div class="event__title">${esc(a.title)}</div>
+      ${sub ? `<div class="event__sub">${sub}</div>` : ""}
+      <button class="btn btn--primary" type="button" id="btnInviteChat" style="margin-top:14px;">Написать работодателю</button>
+      ${rest > 0 ? `<button class="btn btn--quiet btn--sm btn--block" type="button" id="btnInviteMore" style="margin-top:8px;">И ещё ${rest} ${plural(rest, "приглашение", "приглашения", "приглашений")}</button>` : ""}
+    </section>`;
+
+  document.getElementById("btnInviteChat").onclick = () => OsWork.go(`/chat/${Number(a.application_id)}`);
+
+  const more = document.getElementById("btnInviteMore");
+  if(more) more.onclick = () => OsWork.go("/my/applications?status=invited");
+}
+
+async function fetchJson(url, fallback){
+  try{
+    const r = await OsWork.apiFetch(url);
+    if(!r.ok) return fallback;
+    return await r.json();
+  }catch(e){
+    return fallback;
+  }
+}
+
+
+/* ===== Уведомления о вакансиях ===== */
+
+function isOn(el){
+  return el.getAttribute("aria-checked") === "true";
+}
+
+function setOn(el, value){
+  el.setAttribute("aria-checked", value ? "true" : "false");
+}
+
+function renderChips(){
+  const box = document.getElementById("kwChips");
+  const words = document.getElementById("subKeywords").value
+    .split(",")
+    .map(w => w.trim())
+    .filter(Boolean);
+
+  box.innerHTML = words.map(w => `<span class="chip">${esc(w)}</span>`).join("");
+}
+
+// Одна строка вместо раскрытого блока: видно главное, не открывая
+function updateSummary(){
+  const cityOn = isOn(document.getElementById("cityToggle"));
+  const kwOn = isOn(document.getElementById("kwToggle"));
+  const city = document.getElementById("subCity").value.trim();
+  const words = document.getElementById("subKeywords").value.trim();
+
+  const summary = document.getElementById("subsSummary");
+
+  if(cityOn && kwOn){
+    summary.textContent = `Включены · ${city} · по вашим словам`;
+  } else if(cityOn){
+    summary.textContent = `Включены · все новые в городе ${city}`;
+  } else if(kwOn){
+    summary.textContent = `Включены · по словам: ${words}`;
+  } else {
+    summary.textContent = "Выключены — включите, чтобы не пропустить вакансии";
+  }
+
+  summary.style.color = (cityOn || kwOn) ? "var(--ok)" : "";
+}
+
+function toggleSubs(open){
+  const collapse = document.getElementById("subsCollapse");
+  const toggle = document.getElementById("subsToggle");
+  const next = typeof open === "boolean" ? open : !collapse.classList.contains("is-open");
+
+  collapse.classList.toggle("is-open", next);
+  toggle.setAttribute("aria-expanded", next ? "true" : "false");
+}
+
+async function fillSubCities(){
+  const sel = document.getElementById("subCity");
+
+  const r = await OsWork.apiFetch("/api/locations");
+  if(!r.ok) return;
+
+  const cities = await r.json().catch(()=>[]);
+  if(!Array.isArray(cities)) return;
+
+  sel.innerHTML = `<option value="">Выберите город или село</option>`;
+
+  cities.forEach(city=>{
+    const opt = document.createElement("option");
+    opt.value = city;
+    opt.textContent = city;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadSubscriptions(){
+  const [city, kw] = await Promise.all([
+    fetchJson("/api/subscription", {}),
+    fetchJson("/api/keyword-subscription", {})
+  ]);
+
+  if(city.exists){
+    setOn(document.getElementById("cityToggle"), city.is_enabled);
+    document.getElementById("subCity").value = city.city || "";
+  }
+
+  if(kw.exists){
+    setOn(document.getElementById("kwToggle"), kw.is_enabled);
+    document.getElementById("subKeywords").value = (kw.keywords || "").split(",").join(", ");
+
+    // город у подписок общий: если в первой он не задан, берём отсюда
+    if(!document.getElementById("subCity").value){
+      document.getElementById("subCity").value = kw.city || "";
+    }
+  }
+
+  renderChips();
+  updateSummary();
+}
+
+// Родная кнопка «Сохранить» появляется, как только настройки тронули
+let subsMain = null;
+
+function useSubsMain(){
+  if(!OsWork.hasMainButton() || subsMain) return;
+  subsMain = OsWork.mainButton({ text: "Сохранить уведомления", onClick: saveSubscriptions });
+}
+
+async function saveSubscriptions(){
+  const btn = document.getElementById("btnSaveSubs");
+  const msg = document.getElementById("subsMsg");
+
+  const cityOn = isOn(document.getElementById("cityToggle"));
+  const kwOn = isOn(document.getElementById("kwToggle"));
+  const city = document.getElementById("subCity").value.trim();
+  const keywords = document.getElementById("subKeywords").value.trim();
+
+  msg.className = "msg";
+  msg.textContent = "";
+
+  if((cityOn || kwOn) && !city){
+    OsWork.haptic("error");
+    msg.className = "msg bad";
+    msg.textContent = "Выберите город или село";
+    return;
+  }
+
+  if(kwOn && !keywords){
+    OsWork.haptic("error");
+    msg.className = "msg bad";
+    msg.textContent = "Укажите ключевые слова через запятую";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Сохранение...";
+  if(subsMain) subsMain.busy(true);
+
+  const problems = [];
+
+  // Город: сохраняем всегда, когда город выбран — выключенная подписка
+  // тоже хранится, чтобы потом включить одним нажатием.
+  if(city){
+    const r = await OsWork.apiFetch("/api/subscription", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ city, is_enabled: cityOn })
+    });
+
+    if(!r.ok){
+      const d = await r.json().catch(()=>({}));
+      problems.push(d.error || "не удалось сохранить подписку на город");
+    }
+  }
+
+  // Ключевые слова: маршрут требует и город, и непустые слова
+  if(city && keywords){
+    const r = await OsWork.apiFetch("/api/keyword-subscription", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ city, keywords, is_enabled: kwOn })
+    });
+
+    if(!r.ok){
+      const d = await r.json().catch(()=>({}));
+      problems.push(d.error || "не удалось сохранить подписку по словам");
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = "Сохранить";
+  if(subsMain) subsMain.busy(false);
+
+  if(problems.length){
+    OsWork.haptic("error");
+    msg.className = "msg bad";
+    msg.textContent = problems.join("; ");
+    return;
+  }
+
+  OsWork.haptic("success");
+  OsWork.setDirty(false);
+  if(subsMain){ subsMain.hide(); subsMain = null; }
+
+  msg.className = "msg ok";
+  msg.textContent = "Сохранено";
+
+  await loadSubscriptions();
+}
+
+document.getElementById("subsToggle").addEventListener("click", () => toggleSubs());
+
+document.getElementById("cityToggle").addEventListener("click", function(){
+  setOn(this, !isOn(this));
+  updateSummary();
+});
+
+document.getElementById("kwToggle").addEventListener("click", function(){
+  setOn(this, !isOn(this));
+  updateSummary();
+});
+
+document.getElementById("subKeywords").addEventListener("input", renderChips);
+document.getElementById("btnSaveSubs").addEventListener("click", saveSubscriptions);
+
+if(OsWork.hasMainButton()){
+  document.getElementById("btnSaveSubs").style.display = "none";
+}
+
+OsWork.trackChanges(document.getElementById("subsSettings"), useSubsMain);
+
+["cityToggle", "kwToggle"].forEach(id=>{
+  document.getElementById(id).addEventListener("click", ()=>{
+    OsWork.setDirty(true);
+    useSubsMain();
+  });
+});
+
+
+/* ===== Запуск ===== */
+
+(async function init(){
+  const [resumeData, apps, favs] = await Promise.all([
+    fetchJson("/api/resume", {}),
+    fetchJson("/api/applicant/applications", []),
+    fetchJson("/api/favorites", []),
+    fillSubCities()
+  ]);
+
+  const appList = Array.isArray(apps) ? apps : [];
+  const favList = Array.isArray(favs) ? favs : [];
+
+  renderProfile(resumeData && resumeData.exists ? resumeData.resume : null);
+  renderStats(appList, favList);
+  renderInvite(appList);
+
+  // Блоки появляются мягко, один за другим
+  OsWork.stagger(document.querySelectorAll("#profileBox, .stat-tile, #inviteBox .card, #subsCard"));
+
+  await loadSubscriptions();
+})();
+</script>
+</body>
+</html>

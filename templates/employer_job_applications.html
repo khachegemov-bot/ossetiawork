@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Кандидаты</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" type="button" onclick="OsWork.go('/employer/jobs', { replace:true, back:true })">Назад</button>
+  <h1 class="page-title">Кандидаты</h1>
+  <span style="width:76px"></span>
+</div>
+
+<div id="jobBox">
+  <div class="skeleton" style="height:120px"></div>
+</div>
+
+<label class="visually-hidden" for="statusFilter">Статус кандидата</label>
+<select id="statusFilter" class="select">
+  <option value="">Все кандидаты</option>
+  <option value="new">Новые</option>
+  <option value="interview">Собеседование</option>
+  <option value="accepted">Принятые</option>
+  <option value="rejected">Отказы</option>
+</select>
+
+<label class="visually-hidden" for="sortFilter">Порядок</label>
+<select id="sortFilter" class="select">
+  <option value="best">Сначала лучшие совпадения</option>
+  <option value="new">Сначала новые</option>
+</select>
+
+<div id="appsBox"><div class="note">Загрузка...</div></div>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+// Дальше идти нельзя — элементов, к которым обращается код ниже, уже нет.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+
+OsWork.setBackButton({ visible:true, fallbackUrl:"/employer/jobs", preferReferrer:true });
+
+const jobId = {{ job_id }};
+let currentJob = null;
+let allApplications = [];
+
+const ICON_PIN = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>`;
+const ICON_INBOX = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 3h6l2-3h4"/><path d="M4.5 6h15l1.5 6v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Z"/></svg>`;
+const ICON_PHONE = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3h3l1.5 4-2 1.5a12 12 0 0 0 6.5 6.5L17 13l4 1.5v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4 6.2 2 2 0 0 1 6 4Z"/></svg>`;
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function statusBadge(status){
+  if(status === "new")       return `<span class="tag tag--wait">Новый</span>`;
+  if(status === "interview") return `<span class="tag tag--wait">Собеседование</span>`;
+  if(status === "accepted")  return `<span class="tag tag--ok">Принят</span>`;
+  if(status === "rejected")  return `<span class="tag tag--bad">Отказ</span>`;
+  return `<span class="tag">${esc(status || "—")}</span>`;
+}
+
+function normalizeText(s){
+  return String(s || "").toLowerCase().replaceAll("ё","е");
+}
+
+const SYNONYMS = {
+  "программист": ["разработчик", "developer", "dev", "кодер"],
+  "разработчик": ["программист", "developer", "dev", "кодер"],
+  "python": ["питон", "py"],
+  "javascript": ["js", "джаваскрипт"],
+  "backend": ["бекенд", "бэкенд", "сервер"],
+  "frontend": ["фронтенд", "фронт"],
+  "кассир": ["продавец", "продавец-кассир"],
+  "продавец": ["кассир", "консультант", "продавец-консультант"],
+  "официант": ["бариста", "работник зала"],
+  "повар": ["кулинар", "пекарь", "кухня"],
+  "водитель": ["шофер", "курьер"],
+  "курьер": ["доставка", "водитель"],
+  "администратор": ["менеджер", "ресепшен", "оператор"],
+  "уборщица": ["клининг", "уборка"],
+  "охранник": ["безопасность", "сторож"],
+  "строитель": ["разнорабочий", "мастер", "отделочник"],
+  "сварщик": ["сварка"],
+  "электрик": ["электромонтажник"],
+  "бухгалтер": ["финансы", "учет"],
+  "smm": ["смм", "контент", "соцсети"],
+  "дизайнер": ["графика", "photoshop", "фотошоп"],
+  "мастер": ["специалист", "ремонт"],
+  "бариста": ["кофе", "официант"]
+};
+
+function expandWord(word){
+  const result = [word];
+
+  if(SYNONYMS[word]){
+    SYNONYMS[word].forEach(x => result.push(x));
+  }
+
+  Object.keys(SYNONYMS).forEach(key=>{
+    if(SYNONYMS[key].includes(word)){
+      result.push(key);
+    }
+  });
+
+  return result;
+}
+
+function splitWords(s){
+  const baseWords = normalizeText(s)
+    .replace(/[^а-яa-z0-9\s-]/gi, " ")
+    .split(/\s+/)
+    .map(x => x.trim())
+    .filter(x => x.length >= 3);
+
+  const expanded = [];
+
+  baseWords.forEach(w=>{
+    expandWord(w).forEach(x=>{
+      if(x && x.length >= 2){
+        expanded.push(x);
+      }
+    });
+  });
+
+  return [...new Set(expanded)];
+}
+
+function scoreCandidate(job, a){
+  let score = 0;
+  let reasons = [];
+
+  const jobTitle = normalizeText(job.title || "");
+  const jobDesc = normalizeText(job.description || "");
+  const jobCity = normalizeText(job.city || "");
+
+  const applicantPosition = normalizeText(a.position || "");
+  const applicantSkills = normalizeText(a.skills || "");
+  const applicantExperience = normalizeText(a.experience || "");
+  const applicantAbout = normalizeText(a.about || "");
+  const applicantCity = normalizeText(a.applicant_city || "");
+
+  /*
+    Принцип оценки:
+    - должность: до 35%
+    - навыки: до 45%
+    - опыт: до 15%
+    - город: до 5%
+    Телефон НЕ учитываем.
+  */
+
+  if(applicantPosition && jobTitle){
+    if(jobTitle.includes(applicantPosition) || applicantPosition.includes(jobTitle)){
+      score += 35;
+      reasons.push("совпадает должность");
+    } else {
+      const titleWords = splitWords(jobTitle);
+      const positionWords = splitWords(applicantPosition);
+      let titleMatches = 0;
+
+      titleWords.forEach(w=>{
+        if(positionWords.includes(w)){
+          titleMatches += 1;
+        }
+      });
+
+      if(titleMatches > 0){
+        const add = Math.min(25, titleMatches * 12);
+        score += add;
+        reasons.push(`частичное совпадение должности: ${titleMatches}`);
+      }
+    }
+  }
+
+  const jobSkillWords = new Set([
+    ...splitWords(job.title || ""),
+    ...splitWords(job.description || "")
+  ]);
+
+  const candidateSkillWords = new Set([
+    ...splitWords(a.skills || ""),
+    ...splitWords(a.about || "")
+  ]);
+
+  let skillMatches = 0;
+
+  jobSkillWords.forEach(w=>{
+    if(candidateSkillWords.has(w)){
+      skillMatches += 1;
+    }
+  });
+
+  if(skillMatches > 0){
+    const add = Math.min(45, skillMatches * 12);
+    score += add;
+    reasons.push(`совпадений по навыкам: ${skillMatches}`);
+  }
+
+  if(applicantExperience){
+    const jobText = `${jobTitle} ${jobDesc}`;
+    const candidateText = `${applicantExperience} ${applicantAbout} ${applicantSkills}`;
+
+    let experienceScore = 0;
+
+    if(candidateText.includes("год") || candidateText.includes("лет") || candidateText.includes("месяц")){
+      experienceScore += 8;
+    }
+
+    if(jobText.includes("опыт") && candidateText.includes("опыт")){
+      experienceScore += 7;
+    }
+
+    if(experienceScore > 0){
+      score += Math.min(15, experienceScore);
+      reasons.push("указан релевантный опыт");
+    }
+  }
+
+  if(jobCity && applicantCity && jobCity === applicantCity){
+    score += 5;
+    reasons.push("город совпадает");
+  }
+
+  if(score > 100){
+    score = 100;
+  }
+
+  if(!reasons.length){
+    reasons.push("мало совпадений по должности и навыкам");
+  }
+
+  return {
+    score,
+    reasons
+  };
+}
+
+
+function scoreBar(score){
+  const level = score >= 70 ? "good" : (score >= 40 ? "mid" : "low");
+  return `
+    <div class="score">
+      <div class="score__bar">
+        <div class="score__fill score__fill--${level}" style="width:${Math.max(3, score)}%"></div>
+      </div>
+      <span class="score__val">${score}%</span>
+    </div>
+  `;
+}
+
+async function loadData(){
+  const r = await OsWork.apiFetch(`/api/employer/jobs/${jobId}/applications`);
+  const data = await r.json().catch(()=>({}));
+
+  if(!r.ok){
+    document.getElementById("jobBox").innerHTML = `<div class="empty">${esc(data.error || "Ошибка")}</div>`;
+    document.getElementById("appsBox").innerHTML = "";
+    return;
+  }
+
+  currentJob = data.job || null;
+  allApplications = Array.isArray(data.applications) ? data.applications : [];
+
+  renderJob();
+  renderApplications();
+}
+
+function renderJob(){
+  const box = document.getElementById("jobBox");
+
+  if(!currentJob){
+    box.innerHTML = `<div class="empty">Вакансия не найдена</div>`;
+    return;
+  }
+
+  const place = [currentJob.city, currentJob.address].filter(Boolean).map(esc).join(" · ");
+
+  box.innerHTML = `
+    <article class="card">
+      <h2 class="card__title">${esc(currentJob.title || "Вакансия")}</h2>
+      ${currentJob.salary_text ? `<div class="card__salary">${esc(currentJob.salary_text)}</div>` : ""}
+      ${place ? `<div class="meta">${ICON_PIN}<span>${place}</span></div>` : ""}
+      <div class="stats">
+        <span class="stat">${ICON_INBOX}Откликов: ${allApplications.length}</span>
+      </div>
+    </article>
+  `;
+}
+
+function kv(key, value){
+  return value ? `<div class="kv"><span class="kv__k">${key}:</span><span class="kv__v">${esc(value)}</span></div>` : "";
+}
+
+function renderApplications(){
+  const box = document.getElementById("appsBox");
+  const statusFilter = document.getElementById("statusFilter").value;
+  const sortFilter = document.getElementById("sortFilter").value;
+
+  let items = allApplications.map(a=>{
+    const match = scoreCandidate(currentJob || {}, a);
+    return {
+      ...a,
+      match_score: match.score,
+      match_reasons: match.reasons
+    };
+  });
+
+  if(statusFilter){
+    items = items.filter(a => a.status === statusFilter);
+  }
+
+  if(sortFilter === "best"){
+    items.sort((a,b)=>Number(b.match_score || 0) - Number(a.match_score || 0));
+  } else {
+    items.sort((a,b)=>String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  }
+
+  if(!items.length){
+    box.innerHTML = `<div class="empty">Кандидатов нет</div>`;
+    return;
+  }
+
+  box.innerHTML = items.map(a => `
+    <article class="card">
+      <div class="card__head">
+        <h2 class="card__title">${esc(a.full_name || "Соискатель")}</h2>
+        ${statusBadge(a.status)}
+      </div>
+
+      ${scoreBar(Number(a.match_score || 0))}
+      <div class="kv"><span class="kv__k">Почему:</span><span class="kv__v">${esc((a.match_reasons || []).join(", "))}</span></div>
+
+      <div class="meta" style="margin-top:12px;">${ICON_PHONE}<span>${esc(a.phone || "—")}</span></div>
+      ${a.applicant_city ? `<div class="meta">${ICON_PIN}<span>${esc(a.applicant_city)}</span></div>` : ""}
+
+      ${kv("Возраст", a.age)}
+      ${kv("Должность", a.position)}
+      ${kv("Опыт", a.experience)}
+      ${kv("Навыки", a.skills)}
+      ${kv("О себе", a.about)}
+      ${kv("График", a.employment_type)}
+      ${kv("Причина отказа", a.reject_reason)}
+
+      <div class="actions-row">
+        <button class="btn btn--quiet btn--sm" type="button" onclick="OsWork.go('/chat/${Number(a.application_id)}', { replace:true })">Чат</button>
+        <button class="btn btn--quiet btn--sm" type="button" onclick="setStatus(${Number(a.application_id)}, 'interview')">Собеседование</button>
+        <button class="btn btn--ok btn--sm" type="button" onclick="setStatus(${Number(a.application_id)}, 'accepted')">Принять</button>
+        <button class="btn btn--danger btn--sm" type="button" onclick="setStatus(${Number(a.application_id)}, 'rejected')">Отказать</button>
+      </div>
+    </article>
+  `).join("");
+}
+
+async function setStatus(id,status){
+  let payload = { status };
+
+  if(status === "rejected"){
+    const reason = prompt("Причина отказа кандидату:", "Не подходит по опыту");
+
+    if(!reason || !reason.trim()){
+      alert("Нужно указать причину отказа");
+      return;
+    }
+
+    payload.reject_reason = reason.trim();
+  }
+
+  const r = await OsWork.apiFetch(`/api/employer/applications/${id}/status`,{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await r.json().catch(()=>({}));
+
+  if(!r.ok){
+    OsWork.haptic("error");
+    alert(data.error || "Ошибка");
+    return;
+  }
+
+  OsWork.haptic("success");
+  await loadData();
+}
+
+document.getElementById("statusFilter").addEventListener("change", renderApplications);
+document.getElementById("sortFilter").addEventListener("change", renderApplications);
+
+loadData();
+</script>
+
+</body>
+</html>

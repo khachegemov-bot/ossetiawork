@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Мои вакансии</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" type="button" id="btnBack">Назад</button>
+  <h1 class="page-title">Мои вакансии</h1>
+  <span style="width:76px"></span>
+</div>
+
+<!-- Вне Telegram у страницы нет родной нижней кнопки — тогда своя сверху -->
+<button class="btn btn--primary" type="button" id="btnNew" style="display:none;margin-bottom:16px;">Опубликовать вакансию</button>
+
+<div class="filter-chips" id="filters"></div>
+
+<section class="card">
+  <div id="jobsBox"><div class="skeleton" style="height:96px;margin:0;"></div></div>
+  <div id="jobMsg"></div>
+</section>
+
+<section class="card">
+  <button class="disclosure" type="button" id="archiveToggle" aria-expanded="false" aria-controls="archiveCollapse" style="padding:0;">
+    <span>Архив</span>
+    <span class="disclosure__chev">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </span>
+  </button>
+
+  <div class="collapse" id="archiveCollapse">
+    <div class="collapse__inner">
+      <div style="padding-top:14px;">
+        <p class="note" style="margin-bottom:10px;">Удалённые вакансии хранятся 10 дней, потом удаляются окончательно.</p>
+        <div id="archiveBox"><div class="note">Загрузка...</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+
+OsWork.setBackButton({ visible:true, fallbackUrl:"/employer" });
+
+document.getElementById("btnBack").onclick = () => OsWork.go("/employer", { replace:true, back:true });
+
+const ICON_PIN = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>`;
+const ICON_EYE = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>`;
+const ICON_INBOX = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 3h6l2-3h4"/><path d="M4.5 6h15l1.5 6v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Z"/></svg>`;
+const ICON_CASE = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7.5" width="18" height="12" rx="2.5"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5"/></svg>`;
+
+const FILTERS = [
+  { key: "all",      label: "Все",          match: () => true },
+  { key: "active",   label: "Активные",     match: j => j.status === "approved" },
+  { key: "pending",  label: "На модерации", match: j => j.status === "pending" },
+  { key: "rejected", label: "Отклонённые",  match: j => j.status === "rejected" }
+];
+
+let jobs = [];
+let archiveLoaded = false;
+let current = new URLSearchParams(location.search).get("status") || "all";
+if(!FILTERS.some(f => f.key === current)) current = "all";
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function statusLabel(status){
+  if(status === "approved") return `<span class="tag tag--ok">Опубликована</span>`;
+  if(status === "pending")  return `<span class="tag tag--wait">На модерации</span>`;
+  if(status === "rejected") return `<span class="tag tag--bad">Отклонена</span>`;
+  return `<span class="tag">${esc(status)}</span>`;
+}
+
+function jobRow(j, archived){
+  const place = [j.city, j.address].filter(Boolean).map(esc).join(" · ");
+  const daysLeft = Number(j.days_left || 0);
+  const id = Number(j.id);
+
+  return `
+    <div class="list-item">
+      <div class="list-item__head">
+        <span class="list-item__title">${esc(j.title)}</span>
+        ${statusLabel(j.status)}
+      </div>
+
+      ${j.salary_text ? `<div class="card__salary" style="font-size:16px;margin:8px 0 6px;">${esc(j.salary_text)}</div>` : ""}
+      ${place ? `<div class="meta">${ICON_PIN}<span>${place}</span></div>` : ""}
+      ${j.reject_reason ? `<div class="note">Причина отклонения: ${esc(j.reject_reason)}</div>` : ""}
+
+      ${archived ? `
+        <div class="note">Удалена: ${esc(OsWork.timeAgo(j.deleted_at) || j.deleted_at || "—")}</div>
+        <div class="note">Окончательное удаление примерно через ${daysLeft < 0 ? 0 : daysLeft} дн.</div>
+      ` : `
+        <div class="stats">
+          <span class="stat">${ICON_EYE}${Number(j.views_total || 0)}</span>
+          <span class="stat">${ICON_INBOX}${Number(j.applications || 0)}</span>
+          ${j.created_at ? `<span class="stat">${esc(OsWork.timeAgo(j.created_at))}</span>` : ""}
+        </div>
+
+        <div class="actions-row">
+          <button class="btn btn--quiet btn--sm" type="button" data-act="candidates" data-id="${id}">Кандидаты</button>
+          ${j.status === "approved" ? `<button class="btn btn--quiet btn--sm" type="button" data-act="share" data-id="${id}">Поделиться</button>` : ""}
+          <button class="btn btn--quiet btn--sm" type="button" data-act="edit" data-id="${id}">Изменить</button>
+          <button class="btn btn--danger btn--sm" type="button" data-act="delete" data-id="${id}">Удалить</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function renderFilters(){
+  const box = document.getElementById("filters");
+
+  box.innerHTML = FILTERS.map(f => {
+    const count = jobs.filter(f.match).length;
+    return `<button class="filter-chip ${f.key === current ? "is-active" : ""}" type="button" data-key="${f.key}">
+      ${f.label}<span class="filter-chip__count">${count}</span>
+    </button>`;
+  }).join("");
+
+  box.querySelectorAll("[data-key]").forEach(b => {
+    b.onclick = () => {
+      current = b.getAttribute("data-key");
+      const url = current === "all" ? location.pathname : location.pathname + "?status=" + current;
+      // Адрес обновляем, чтобы «Назад» из вакансии вернул на тот же фильтр.
+      // Это удобство: если встроенный браузер запретит — фильтр всё равно работает.
+      try { history.replaceState(null, "", url); } catch (e) {}
+      renderFilters();
+      renderJobs();
+    };
+  });
+}
+
+function renderJobs(){
+  const box = document.getElementById("jobsBox");
+  const items = jobs.filter(FILTERS.find(f => f.key === current).match);
+
+  if(!items.length){
+    const text = current === "all"
+      ? "Вакансий пока нет. Опубликуйте первую — это пара минут."
+      : "В этом разделе пусто";
+
+    box.innerHTML = `
+      <div class="empty-inline">
+        <span class="empty-inline__icon">${ICON_CASE}</span>
+        <span>${text}</span>
+      </div>`;
+    return;
+  }
+
+  box.innerHTML = items.map(j => jobRow(j, false)).join("");
+  OsWork.stagger(box.querySelectorAll(".list-item"));
+}
+
+async function loadJobs(){
+  try{
+    const r = await OsWork.apiFetch("/api/employer/jobs");
+    const data = r.ok ? await r.json() : [];
+    jobs = Array.isArray(data) ? data : [];
+  }catch(e){
+    jobs = [];
+  }
+
+  renderFilters();
+  renderJobs();
+}
+
+async function loadArchive(){
+  const box = document.getElementById("archiveBox");
+
+  try{
+    const r = await OsWork.apiFetch("/api/employer/jobs-archive");
+    const data = r.ok ? await r.json() : [];
+    const items = Array.isArray(data) ? data : [];
+
+    box.innerHTML = items.length
+      ? items.map(j => jobRow(j, true)).join("")
+      : `<div class="note">Архив пуст</div>`;
+  }catch(e){
+    box.innerHTML = `<div class="note">Не удалось загрузить архив</div>`;
+  }
+
+  archiveLoaded = true;
+}
+
+async function deleteJob(id){
+  if(!confirm("Удалить вакансию? Она попадёт в архив на 10 дней.")) return;
+
+  const r = await OsWork.apiFetch(`/api/employer/jobs/${id}`, { method:"DELETE" });
+  const data = await r.json().catch(()=>({}));
+
+  const msg = document.getElementById("jobMsg");
+
+  if(!r.ok){
+    OsWork.haptic("error");
+    msg.className = "msg bad";
+    msg.textContent = data.error || "Ошибка удаления";
+    return;
+  }
+
+  OsWork.haptic("success");
+  msg.textContent = "";
+  await loadJobs();
+  if(archiveLoaded) await loadArchive();
+}
+
+// Одна точка для всех кнопок в списке
+document.getElementById("jobsBox").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-act]");
+  if(!btn) return;
+
+  const id = Number(btn.getAttribute("data-id"));
+  const act = btn.getAttribute("data-act");
+  const job = jobs.find(x => Number(x.id) === id);
+
+  if(act === "candidates") OsWork.go(`/employer/job/${id}/applications`);
+  if(act === "edit")       OsWork.go(`/employer/job/${id}/edit`);
+  if(act === "share")      OsWork.shareJob(id, job ? job.title : "Вакансия");
+  if(act === "delete")     deleteJob(id);
+});
+
+document.getElementById("archiveToggle").addEventListener("click", async () => {
+  const collapse = document.getElementById("archiveCollapse");
+  const open = !collapse.classList.contains("is-open");
+
+  if(open && !archiveLoaded) await loadArchive();
+
+  collapse.classList.toggle("is-open", open);
+  document.getElementById("archiveToggle").setAttribute("aria-expanded", open ? "true" : "false");
+});
+
+// Главное действие страницы — новая вакансия
+const newJob = () => OsWork.go("/employer/job/new");
+
+if(!OsWork.mainButton({ text: "Опубликовать вакансию", shine: true, onClick: newJob })){
+  const btn = document.getElementById("btnNew");
+  btn.onclick = newJob;
+  btn.style.display = "flex";
+}
+
+loadJobs();
+</script>
+</body>
+</html>

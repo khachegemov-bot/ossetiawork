@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Вакансия</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" type="button" id="btnBack">Назад</button>
+  <h1 class="page-title" id="pageTitle">Новая вакансия</h1>
+  <span style="width:76px"></span>
+</div>
+
+<section class="card" id="jobCard">
+  <p class="note" id="formHint" style="margin-bottom:14px;">После публикации вакансия уйдёт на модерацию и появится в списке после проверки.</p>
+
+  <label class="form-label" for="title">Название вакансии</label>
+  <input class="input" id="title" placeholder="Продавец-консультант">
+
+  <label class="form-label" for="city">Населённый пункт</label>
+  <select class="select" id="city">
+    <option value="">Выберите город или село</option>
+  </select>
+
+  <label class="form-label" for="address">Адрес</label>
+  <input class="input" id="address" placeholder="улица Мира, 12">
+
+  <label class="form-label" for="salary">Зарплата</label>
+  <input class="input" id="salary" placeholder="от 45 000 ₽">
+
+  <label class="form-label" for="description">Описание</label>
+  <textarea class="textarea" id="description" placeholder="Обязанности, график, требования, условия"></textarea>
+
+  <div class="preview">
+    <div class="preview__label">ТАК ВАКАНСИЮ УВИДЯТ СОИСКАТЕЛИ</div>
+    <div id="previewBox"></div>
+  </div>
+
+  <button class="btn btn--primary" id="jobSubmitBtn" type="button" style="margin-top:16px;">Опубликовать вакансию</button>
+  <div id="jobMsg" class="msg msg--center"></div>
+</section>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+
+OsWork.setBackButton({ visible:true, fallbackUrl:"/employer/jobs", preferReferrer:true });
+
+document.getElementById("btnBack").onclick = () => OsWork.go("/employer/jobs", { replace:true, back:true });
+
+// 0 — новая вакансия, иначе номер редактируемой
+const editingJobId = Number("{{ job_id }}") || null;
+
+let company = { name: "", verified: false };
+
+const ICON_PIN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>`;
+const ICON_CHECK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+const val = (id) => document.getElementById(id).value.trim();
+
+// Та же карточка, что соискатель видит в списке вакансий
+function renderPreview(){
+  const title = val("title");
+  const place = [val("city"), val("address")].filter(Boolean).map(esc).join(" · ");
+  const salary = val("salary");
+  const description = val("description");
+
+  document.getElementById("previewBox").innerHTML = `
+    <div class="preview__name ${title ? "" : "preview__empty"}">${title ? esc(title) : "Название вакансии"}</div>
+    ${company.name ? `
+      <div class="card__sub" style="margin-top:4px;">
+        <span>${esc(company.name)}</span>
+        ${company.verified ? `<span class="verified">${ICON_CHECK}проверен</span>` : ""}
+      </div>` : ""}
+    <div class="card__salary" style="${salary ? "" : "color:var(--text-dim);"}">${salary ? esc(salary) : "Зарплата"}</div>
+    ${place ? `<div class="meta">${ICON_PIN}<span>${place}</span></div>` : ""}
+    ${description ? `<div class="preview__about">${esc(description.substring(0,160))}${description.length > 160 ? "…" : ""}</div>` : ""}
+  `;
+}
+
+async function loadCities(){
+  const res = await OsWork.apiFetch("/api/locations");
+  const cities = await res.json().catch(()=>[]);
+  const select = document.getElementById("city");
+
+  select.innerHTML = '<option value="">Выберите город или село</option>';
+
+  if(Array.isArray(cities)){
+    cities.forEach(city=>{
+      const opt = document.createElement("option");
+      opt.value = city;
+      opt.textContent = city;
+      select.appendChild(opt);
+    });
+  }
+}
+
+async function loadCompany(){
+  try{
+    const r = await OsWork.apiFetch("/api/employer/profile");
+    const data = await r.json();
+    if(data.exists){
+      company = { name: data.profile.company_name || "", verified: data.profile.status === "Проверен" };
+    }
+  }catch(e){}
+}
+
+async function loadJobForEdit(){
+  const r = await OsWork.apiFetch("/api/employer/jobs");
+  const list = await r.json().catch(()=>[]);
+  const job = Array.isArray(list) ? list.find(x => Number(x.id) === editingJobId) : null;
+
+  if(!job){
+    document.getElementById("jobCard").innerHTML = `<div class="empty">Вакансия не найдена — возможно, её уже удалили.</div>`;
+    return false;
+  }
+
+  document.getElementById("title").value = job.title || "";
+  document.getElementById("city").value = job.city || "";
+  document.getElementById("address").value = job.address || "";
+  document.getElementById("salary").value = job.salary_text || "";
+  document.getElementById("description").value = job.description || "";
+  return true;
+}
+
+let jobMain = null;
+
+async function submitJob(){
+  const btn = document.getElementById("jobSubmitBtn");
+  const msg = document.getElementById("jobMsg");
+  const label = btn.textContent;
+
+  const payload = {
+    title: document.getElementById("title").value,
+    city: document.getElementById("city").value,
+    address: document.getElementById("address").value,
+    salary_text: document.getElementById("salary").value,
+    description: document.getElementById("description").value
+  };
+
+  const url = editingJobId ? `/api/employer/jobs/${editingJobId}` : "/api/employer/jobs";
+  const method = editingJobId ? "PUT" : "POST";
+
+  btn.disabled = true;
+  btn.textContent = "Отправка...";
+  if(jobMain) jobMain.busy(true);
+
+  const r = await OsWork.apiFetch(url, {
+    method,
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await r.json().catch(()=>({}));
+
+  btn.disabled = false;
+  btn.textContent = label;
+
+  if(!r.ok){
+    OsWork.haptic("error");
+    if(jobMain) jobMain.busy(false);
+    msg.className = "msg msg--center bad";
+    msg.textContent = data.error || "Ошибка";
+    return;
+  }
+
+  OsWork.haptic("success");
+  OsWork.setDirty(false);
+  if(jobMain) jobMain.done(editingJobId ? "Сохранено" : "Отправлено на модерацию");
+
+  msg.className = "msg msg--center ok";
+  msg.textContent = editingJobId
+    ? "Вакансия изменена и снова ушла на модерацию"
+    : "Вакансия отправлена на модерацию";
+
+  setTimeout(() => OsWork.go("/employer/jobs?status=pending", { replace:true, back:true }), 900);
+}
+
+(async function init(){
+  if(editingJobId){
+    document.getElementById("pageTitle").textContent = "Изменить вакансию";
+    document.getElementById("formHint").textContent = "После изменения вакансия снова уйдёт на модерацию.";
+    document.getElementById("jobSubmitBtn").textContent = "Сохранить изменения";
+  }
+
+  await Promise.all([loadCities(), loadCompany()]);
+
+  if(editingJobId && !(await loadJobForEdit())) return;
+
+  const text = editingJobId ? "Сохранить изменения" : "Опубликовать вакансию";
+  jobMain = OsWork.mainButton({ text, shine: !editingJobId, onClick: submitJob });
+  if(jobMain) document.getElementById("jobSubmitBtn").style.display = "none";
+
+  document.getElementById("jobSubmitBtn").addEventListener("click", submitJob);
+
+  ["title", "address", "salary", "description"].forEach(id => {
+    document.getElementById(id).addEventListener("input", renderPreview);
+  });
+  document.getElementById("city").addEventListener("change", renderPreview);
+
+  // Начал заполнять и случайно смахнул — Telegram переспросит
+  OsWork.trackChanges(document.getElementById("jobCard"));
+
+  renderPreview();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Админка</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+
+<style>
+.stats-group {
+  margin: var(--sp-5) 0 var(--sp-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.stats-group:first-child { margin-top: 0; }
+.stats-hint { margin: calc(-1 * var(--sp-1)) 0 var(--sp-2); }
+
+.chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+.chart-head__num { font-family: var(--font-display); font-size: 22px; font-weight: 500; }
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 120px;
+  margin-top: var(--sp-3);
+}
+.bars__col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  cursor: pointer;
+}
+.bars__fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--gold);
+  opacity: .8;
+  transition: opacity .12s ease;
+}
+.bars__fill--zero { background: var(--line-strong); opacity: 1; }
+.bars__col.is-active .bars__fill { opacity: 1; box-shadow: 0 0 0 1.5px var(--text); }
+
+.bars__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+</style>
+</head>
+
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" type="button" onclick="OsWork.go('/', { replace:true })">Назад</button>
+  <h1 class="page-title">Админка</h1>
+  <span style="width:76px"></span>
+</div>
+
+<div class="tabs">
+  <button class="tab is-active" type="button" id="tabStats" onclick="showTab('stats')">Статистика</button>
+  <button class="tab" type="button" id="tabJobs" onclick="showTab('jobs')">Вакансии</button>
+  <button class="tab" type="button" id="tabEmployers" onclick="showTab('employers')">Работодатели</button>
+</div>
+
+<div id="accessBox" class="empty">Проверка доступа...</div>
+
+<section id="statsSection" class="hidden">
+  <div id="statsBox"><div class="note">Загрузка...</div></div>
+
+  <div class="stats-group">По дням, последние 30 дней</div>
+  <div class="filter-chips" id="chartChips"></div>
+  <div class="card" id="chartBox"></div>
+
+  <p class="note note--spaced">Твои тестовые вакансии, отклики и просмотры здесь не считаются.</p>
+</section>
+
+<section id="jobsSection" class="hidden">
+  <div class="field">
+    <span class="field__icon">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+    </span>
+    <label class="visually-hidden" for="jobSearch">Поиск вакансий</label>
+    <input id="jobSearch" placeholder="Название, город, зарплата">
+  </div>
+
+  <label class="visually-hidden" for="jobStatusFilter">Статус вакансии</label>
+  <select id="jobStatusFilter" class="select">
+    <option value="">Все статусы</option>
+    <option value="pending">На модерации</option>
+    <option value="approved">Одобрены</option>
+    <option value="rejected">Отклонены</option>
+  </select>
+
+  <div id="jobsBox"><div class="note">Загрузка...</div></div>
+</section>
+
+<section id="employersSection" class="hidden">
+  <div class="field">
+    <span class="field__icon">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+    </span>
+    <label class="visually-hidden" for="employerSearch">Поиск работодателей</label>
+    <input id="employerSearch" placeholder="Компания, телефон, Telegram ID">
+  </div>
+
+  <label class="visually-hidden" for="employerStatusFilter">Статус работодателя</label>
+  <select id="employerStatusFilter" class="select">
+    <option value="">Все статусы</option>
+    <option value="На проверке">На проверке</option>
+    <option value="Проверен">Проверен</option>
+    <option value="Заблокирован">Заблокирован</option>
+  </select>
+
+  <div id="employersBox"><div class="note">Загрузка...</div></div>
+</section>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+// Дальше идти нельзя — элементов, к которым обращается код ниже, уже нет.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+
+OsWork.setBackButton({ visible:true, fallbackUrl:"/" });
+
+let allJobs = [];
+let allEmployers = [];
+
+const ICON_PIN = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>`;
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function badgeStatus(status){
+  if(status === "approved")       return `<span class="tag tag--ok">Одобрена</span>`;
+  if(status === "pending")        return `<span class="tag tag--wait">На модерации</span>`;
+  if(status === "rejected")       return `<span class="tag tag--bad">Отклонена</span>`;
+  if(status === "Проверен")       return `<span class="tag tag--ok">Проверен</span>`;
+  if(status === "На проверке")    return `<span class="tag tag--wait">На проверке</span>`;
+  if(status === "Заблокирован")   return `<span class="tag tag--bad">Заблокирован</span>`;
+  return `<span class="tag">${esc(status || "—")}</span>`;
+}
+
+function showTab(tab){
+  ["stats", "jobs", "employers"].forEach(name => {
+    const cap = name[0].toUpperCase() + name.slice(1);
+    document.getElementById("tab" + cap).classList.toggle("is-active", tab === name);
+    document.getElementById(name + "Section").classList.toggle("hidden", tab !== name);
+  });
+}
+
+async function checkAdmin(){
+  const r = await OsWork.apiFetch("/api/me");
+  const me = await r.json().catch(()=>({}));
+
+  if(!r.ok || !me.is_admin){
+    document.body.innerHTML = `<div class="empty">Нет доступа</div>`;
+    return false;
+  }
+
+  document.getElementById("accessBox").style.display = "none";
+  document.getElementById("statsSection").classList.remove("hidden");
+  return true;
+}
+
+// ---------- Статистика ----------
+
+let stats = null;
+let chartMetric = "users";
+let chartDay = null;   // выбранный столбик
+
+const CHART_METRICS = [
+  { key: "users",        label: "Новые люди", unit: ["человек", "человека", "человек"] },
+  { key: "views",        label: "Просмотры",  unit: ["просмотр", "просмотра", "просмотров"] },
+  { key: "applications", label: "Отклики",    unit: ["отклик", "отклика", "откликов"] },
+];
+
+function plural(n, forms){
+  const a = Math.abs(n) % 100, b = a % 10;
+  if(a > 10 && a < 20) return forms[2];
+  if(b === 1) return forms[0];
+  if(b >= 2 && b <= 4) return forms[1];
+  return forms[2];
+}
+
+function fmtDate(s, withYear){
+  if(!s) return "—";
+  const [y, m, d] = String(s).slice(0, 10).split("-");
+  return withYear ? `${d}.${m}.${y}` : `${d}.${m}`;
+}
+
+function fmtHours(h){
+  if(h === null || h === undefined) return "—";
+  if(h < 1) return "&lt; 1 ч";
+  if(h < 48) return Math.round(h) + " ч";
+  return Math.round(h / 24) + " дн";
+}
+
+function tile(num, label, accent){
+  return `
+    <div class="stat-tile ${accent ? "stat-tile--accent" : ""}">
+      <div class="stat-tile__num">${num}</div>
+      <div class="stat-tile__label">${label}</div>
+    </div>`;
+}
+
+function group(title, tiles, hint){
+  return `
+    <div class="stats-group">${title}</div>
+    ${hint ? `<p class="note stats-hint">${hint}</p>` : ""}
+    <div class="stat-tiles">${tiles.join("")}</div>`;
+}
+
+async function loadStats(){
+  const box = document.getElementById("statsBox");
+
+  const r = await OsWork.apiFetch("/api/admin/stats");
+  const data = await r.json().catch(()=>({}));
+
+  if(!r.ok){
+    box.innerHTML = `<div class="empty">${esc(data.error || "Ошибка загрузки")}</div>`;
+    return;
+  }
+
+  stats = data;
+  renderStats();
+  renderChart();
+}
+
+function renderStats(){
+  const s = stats;
+  const apps = s.applications;
+  const answeredShare = apps.total ? Math.round(apps.answered / apps.total * 100) + "%" : "—";
+
+  document.getElementById("statsBox").innerHTML =
+    group("Люди", [
+      tile(s.users.total, "всего"),
+      tile(s.users.last_7, "новых за 7 дней", s.users.last_7 > 0),
+      tile(s.users.last_30, "новых за 30 дней"),
+    ], `Последний новый — ${fmtDate(s.users.last_at, true)}`) +
+
+    group("Профили", [
+      tile(s.resumes, "резюме"),
+      tile(s.employers, "работодателей"),
+      tile(s.subscriptions, "подписок"),
+    ]) +
+
+    group("Вакансии", [
+      tile(s.jobs.active, "активных"),
+      tile(s.jobs.pending, "на модерации", s.jobs.pending > 0),
+      tile(s.views.last_7, "просмотров за 7 дней"),
+    ], s.views.viewers_7
+      ? `За 7 дней вакансии смотрели ${s.views.viewers_7} ${plural(s.views.viewers_7, ["человек", "человека", "человек"])}`
+      : "") +
+
+    group("Отклики", [
+      tile(apps.total, "всего"),
+      tile(apps.waiting, "ждут ответа", apps.waiting > 0),
+      tile(answeredShare, "с ответом"),
+      tile(fmtHours(apps.avg_answer_hours), "среднее время ответа"),
+      tile(s.chat_messages, "сообщений в чатах"),
+      tile(s.reminders_30, "напоминаний за 30 дней"),
+    ]);
+}
+
+function renderChart(){
+  const metric = CHART_METRICS.find(m => m.key === chartMetric);
+  const values = stats.series[chartMetric] || [];
+  const days = stats.days || [];
+  const max = Math.max(0, ...values);
+  const total = values.reduce((a, b) => a + b, 0);
+
+  document.getElementById("chartChips").innerHTML = CHART_METRICS.map(m => `
+    <button class="filter-chip ${m.key === chartMetric ? "is-active" : ""}" type="button" data-key="${m.key}">${m.label}</button>
+  `).join("");
+
+  const picked = chartDay !== null ? chartDay : null;
+  const headNum = picked !== null ? values[picked] : total;
+  const headLabel = picked !== null
+    ? `${fmtDate(days[picked])} · ${plural(values[picked], metric.unit)}`
+    : `за 30 дней · ${plural(total, metric.unit)}`;
+
+  document.getElementById("chartBox").innerHTML = `
+    <div class="chart-head">
+      <span class="chart-head__num">${headNum}</span>
+      <span class="note">${headLabel}</span>
+    </div>
+    <div class="bars">
+      ${values.map((v, i) => {
+        const h = max > 0 ? Math.max(v / max * 100, v > 0 ? 4 : 0) : 0;
+        return `<div class="bars__col ${i === picked ? "is-active" : ""}" data-i="${i}">
+          <div class="bars__fill ${v === 0 ? "bars__fill--zero" : ""}" style="height:${h}%"></div>
+        </div>`;
+      }).join("")}
+    </div>
+    <div class="bars__axis"><span>${fmtDate(days[0])}</span><span>сегодня</span></div>
+  `;
+}
+
+document.getElementById("chartChips").addEventListener("click", e => {
+  const btn = e.target.closest(".filter-chip");
+  if(!btn || !stats) return;
+  chartMetric = btn.dataset.key;
+  chartDay = null;
+  renderChart();
+});
+
+document.getElementById("chartBox").addEventListener("click", e => {
+  const col = e.target.closest(".bars__col");
+  if(!col || !stats) return;
+  const i = Number(col.dataset.i);
+  chartDay = chartDay === i ? null : i;   // повторное нажатие — снова итог за 30 дней
+  OsWork.haptic("select");
+  renderChart();
+});
+
+function kv(key, value){
+  return `<div class="kv"><span class="kv__k">${key}:</span><span class="kv__v">${esc(value || "—")}</span></div>`;
+}
+
+async function loadJobs(){
+  const box = document.getElementById("jobsBox");
+
+  const r = await OsWork.apiFetch("/api/admin/jobs");
+  const data = await r.json().catch(()=>[]);
+
+  if(!r.ok){
+    box.innerHTML = `<div class="empty">${esc(data.error || "Ошибка загрузки")}</div>`;
+    return;
+  }
+
+  allJobs = Array.isArray(data) ? data : [];
+  renderJobs();
+}
+
+function renderJobs(){
+  const box = document.getElementById("jobsBox");
+  const q = document.getElementById("jobSearch").value.trim().toLowerCase();
+  const status = document.getElementById("jobStatusFilter").value;
+
+  let items = allJobs.filter(j=>{
+    const text = `${j.title || ""} ${j.city || ""} ${j.salary_text || ""} ${j.description || ""}`.toLowerCase();
+    const okText = !q || text.includes(q);
+    const okStatus = !status || j.status === status;
+    return okText && okStatus;
+  });
+
+  if(!items.length){
+    box.innerHTML = `<div class="empty">Вакансий нет</div>`;
+    return;
+  }
+
+  box.innerHTML = items.map(j => {
+    const place = [j.city, j.address].filter(Boolean).map(esc).join(" · ");
+    const description = (j.description || "").trim();
+
+    return `
+      <article class="card">
+        <div class="card__head">
+          <h2 class="card__title">${esc(j.title)}</h2>
+          ${badgeStatus(j.status)}
+        </div>
+
+        ${j.salary_text ? `<div class="card__salary">${esc(j.salary_text)}</div>` : ""}
+        ${place ? `<div class="meta">${ICON_PIN}<span>${place}</span></div>` : ""}
+
+        ${kv("Работодатель Telegram ID", j.telegram_id)}
+        ${j.reject_reason ? kv("Причина отклонения", j.reject_reason) : ""}
+
+        ${description ? `<p class="card__text" style="margin-top:10px;">${esc(description.substring(0,220))}${description.length > 220 ? "…" : ""}</p>` : ""}
+
+        <div class="actions-row">
+          ${j.status !== "approved" ? `<button class="btn btn--ok btn--sm" type="button" onclick="approveJob(${Number(j.id)})">Одобрить</button>` : ""}
+          ${j.status !== "rejected" ? `<button class="btn btn--quiet btn--sm" type="button" onclick="rejectJob(${Number(j.id)})">Отклонить</button>` : ""}
+          <button class="btn btn--danger btn--sm" type="button" onclick="deleteJob(${Number(j.id)})">Удалить</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+async function approveJob(id){
+  const r = await OsWork.apiFetch(`/api/admin/jobs/${id}/approve`, { method:"POST" });
+  if(!r.ok){
+    const data = await r.json().catch(()=>({}));
+    alert(data.error || "Ошибка");
+    return;
+  }
+  await loadJobs();
+}
+
+async function rejectJob(id){
+  const reason = prompt("Причина отклонения вакансии:", "Недостаточно информации в описании");
+
+  if(!reason || !reason.trim()){
+    alert("Нужно указать причину отклонения");
+    return;
+  }
+
+  const r = await OsWork.apiFetch(`/api/admin/jobs/${id}/reject`, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ reason: reason.trim() })
+  });
+
+  if(!r.ok){
+    const data = await r.json().catch(()=>({}));
+    alert(data.error || "Ошибка");
+    return;
+  }
+
+  await loadJobs();
+}
+
+async function deleteJob(id){
+  if(!confirm("Удалить вакансию?")) return;
+
+  const r = await OsWork.apiFetch(`/api/admin/jobs/${id}`, { method:"DELETE" });
+  if(!r.ok){
+    const data = await r.json().catch(()=>({}));
+    alert(data.error || "Ошибка удаления");
+    return;
+  }
+  await loadJobs();
+}
+
+async function loadEmployers(){
+  const box = document.getElementById("employersBox");
+
+  const r = await OsWork.apiFetch("/api/admin/employers");
+  const data = await r.json().catch(()=>[]);
+
+  if(!r.ok){
+    box.innerHTML = `<div class="empty">${esc(data.error || "Ошибка загрузки")}</div>`;
+    return;
+  }
+
+  allEmployers = Array.isArray(data) ? data : [];
+  renderEmployers();
+}
+
+function realEmployerStatus(emp){
+  if(Number(emp.is_banned) === 1){
+    return "Заблокирован";
+  }
+  return emp.status || "На проверке";
+}
+
+function renderEmployers(){
+  const box = document.getElementById("employersBox");
+  const q = document.getElementById("employerSearch").value.trim().toLowerCase();
+  const status = document.getElementById("employerStatusFilter").value;
+
+  let items = allEmployers.filter(emp=>{
+    const realStatus = realEmployerStatus(emp);
+    const text = `${emp.company_name || ""} ${emp.phone || ""} ${emp.contact_name || ""} ${emp.telegram_id || ""}`.toLowerCase();
+    const okText = !q || text.includes(q);
+    const okStatus = !status || realStatus === status;
+    return okText && okStatus;
+  });
+
+  if(!items.length){
+    box.innerHTML = `<div class="empty">Работодателей нет</div>`;
+    return;
+  }
+
+  box.innerHTML = items.map(emp=>{
+    const st = realEmployerStatus(emp);
+
+    return `
+      <article class="card">
+        <div class="card__head">
+          <h2 class="card__title">${esc(emp.company_name || "Без названия")}</h2>
+          ${badgeStatus(st)}
+        </div>
+
+        ${kv("Telegram ID", emp.telegram_id)}
+        ${kv("Контакт", emp.contact_name)}
+        ${kv("Телефон", emp.phone)}
+        ${emp.reason ? kv("Причина бана", emp.reason) : ""}
+        ${emp.banned_until ? kv("Бан до", emp.banned_until) : ""}
+
+        <div class="actions-row">
+          ${st === "Проверен"
+            ? `<button class="btn btn--quiet btn--sm" type="button" onclick="unverifyEmployer(${Number(emp.telegram_id)})">Забрать галочку</button>`
+            : `<button class="btn btn--ok btn--sm" type="button" onclick="approveEmployer(${Number(emp.telegram_id)})">Выдать галочку</button>`
+          }
+
+          <button class="btn btn--quiet btn--sm" type="button" onclick="banEmployerTemp(${Number(emp.telegram_id)}, 1)">Бан 1 д.</button>
+          <button class="btn btn--quiet btn--sm" type="button" onclick="banEmployerTemp(${Number(emp.telegram_id)}, 7)">Бан 7 д.</button>
+          <button class="btn btn--quiet btn--sm" type="button" onclick="banEmployerTemp(${Number(emp.telegram_id)}, 30)">Бан 30 д.</button>
+          <button class="btn btn--danger btn--sm" type="button" onclick="banEmployerPermanent(${Number(emp.telegram_id)})">Бан навсегда</button>
+          <button class="btn btn--quiet btn--sm" type="button" onclick="unbanEmployer(${Number(emp.telegram_id)})">Разбанить</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+async function approveEmployer(telegramId){
+  const r = await OsWork.apiFetch(`/api/admin/employers/${telegramId}/approve`, { method:"POST" });
+  if(!r.ok){
+    const data = await r.json().catch(()=>({}));
+    alert(data.error || "Ошибка");
+    return;
+  }
+  await loadEmployers();
+}
+
+async function unverifyEmployer(telegramId){
+  const r = await OsWork.apiFetch(`/api/admin/employers/${telegramId}/unverify`, { method:"POST" });
+  if(!r.ok){
+    const data = await r.json().catch(()=>({}));
+    alert(data.error || "Ошибка");
+    return;
+  }
+  await loadEmployers();
+}
+
+async function banEmployerTemp(telegramId, days){
+  const reason = prompt(`Причина временного бана на ${days} дн.:`, "Нарушение правил") || "";
+
+  const r = await OsWork.apiFetch(`/api/admin/employers/${telegramId}/ban-temp`, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ days, reason })
+  });
+
+  if(!r.ok){
+    const data = await r.json().catch(()=>({}));
+    alert(data.error || "Ошибка");
+    return;
+  }
+
+  await loadEmployers();
+}
+
+async function banEmployerPermanent(telegramId){
+  const reason = prompt("Причина постоянного бана:", "Серьёзное нарушение") || "";
+
+  const r = await OsWork.apiFetch(`/api/admin/employers/${telegramId}/ban-permanent`, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ reason })
+  });
+
+  if(!r.ok){
+    const data = await r.json().catch(()=>({}));
+    alert(data.error || "Ошибка");
+    return;
+  }
+
+  await loadEmployers();
+}
+
+async function unbanEmployer(telegramId){
+  const r = await OsWork.apiFetch(`/api/admin/employers/${telegramId}/unban`, { method:"POST" });
+
+  if(!r.ok){
+    const data = await r.json().catch(()=>({}));
+    alert(data.error || "Ошибка");
+    return;
+  }
+
+  await loadEmployers();
+}
+
+document.getElementById("jobSearch").addEventListener("input", renderJobs);
+document.getElementById("jobStatusFilter").addEventListener("change", renderJobs);
+document.getElementById("employerSearch").addEventListener("input", renderEmployers);
+document.getElementById("employerStatusFilter").addEventListener("change", renderEmployers);
+
+(async function init(){
+  const ok = await checkAdmin();
+  if(!ok) return;
+
+  await loadStats();
+  await loadJobs();
+  await loadEmployers();
+})();
+</script>
+
+</body>
+</html>

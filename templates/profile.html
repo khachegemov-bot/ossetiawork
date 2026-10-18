@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Профиль</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" id="btnBack" type="button">Назад</button>
+  <h1 class="page-title">Профиль</h1>
+  <button class="btn btn--quiet btn--sm" id="btnJobs" type="button">Вакансии</button>
+</div>
+
+<div class="section-label"><span>ВАШИ РЕЖИМЫ</span></div>
+
+<div id="actions">
+  <div class="skeleton" style="height:58px"></div>
+  <div class="skeleton" style="height:58px"></div>
+</div>
+
+<p class="note note--spaced">
+  Вы можете быть и соискателем, и работодателем одновременно.
+  Доступ открывается после заполнения данных.
+</p>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+// Дальше идти нельзя — элементов, к которым обращается код ниже, уже нет.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+OsWork.setBackButton({ visible:true, fallbackUrl:"/" });
+
+const ICON_SEARCH = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>`;
+const ICON_CASE = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7.5" width="18" height="12" rx="2.5"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5"/></svg>`;
+const ICON_PLUS = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`;
+const ICON_CHEV = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>`;
+
+document.getElementById("btnBack").addEventListener("click", () => OsWork.go("/", { replace:true }));
+document.getElementById("btnJobs").addEventListener("click", () => OsWork.go("/", { replace:true }));
+
+function actionButton({ icon, title, hint, href }){
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "list-action";
+  btn.innerHTML = `
+    <span class="list-action__icon">${icon}</span>
+    <span class="list-action__body">
+      ${title}
+      ${hint ? `<span class="list-action__hint">${hint}</span>` : ""}
+    </span>
+    <span class="list-action__chev">${ICON_CHEV}</span>
+  `;
+  btn.onclick = ()=>OsWork.go(href, { replace:true });
+  return btn;
+}
+
+async function render(){
+  const r = await OsWork.apiFetch("/api/me");
+  const me = await r.json().catch(()=>({ exists:false }));
+
+  const box = document.getElementById("actions");
+  box.innerHTML = "";
+
+  const hasResume = !!me.has_resume;
+  const hasEmployer = !!me.has_employer_profile;
+
+  if(hasResume){
+    box.appendChild(actionButton({
+      icon: ICON_SEARCH,
+      title: "Кабинет соискателя",
+      hint: "Ваши отклики и резюме",
+      href: "/applicant"
+    }));
+  } else {
+    box.appendChild(actionButton({
+      icon: ICON_PLUS,
+      title: "Создать резюме",
+      hint: "Нужно, чтобы откликаться на вакансии",
+      href: "/resume"
+    }));
+  }
+
+  if(hasEmployer){
+    box.appendChild(actionButton({
+      icon: ICON_CASE,
+      title: "Кабинет работодателя",
+      hint: "Ваши вакансии и отклики на них",
+      href: "/employer"
+    }));
+  } else {
+    box.appendChild(actionButton({
+      icon: ICON_PLUS,
+      title: "Создать профиль компании",
+      hint: "Нужно, чтобы публиковать вакансии",
+      href: "/employer"
+    }));
+  }
+}
+
+render();
+</script>
+
+</body>
+</html>

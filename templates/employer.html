@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Кабинет работодателя</title>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" type="button" id="btnBack">Назад</button>
+  <h1 class="page-title">Работодатель</h1>
+  <span style="width:76px"></span>
+</div>
+
+<!-- Кто вы: карточка компании и статус проверки -->
+<section class="card" id="profileBox">
+  <div class="skeleton" style="height:64px;margin:0;"></div>
+</section>
+
+<!-- Сводка по вакансиям -->
+<div class="stat-tiles" id="statsBox"></div>
+
+<!-- Главное событие: новые отклики ждут ответа -->
+<div id="eventBox"></div>
+
+<!-- Главное действие. Внутри Telegram — родная кнопка внизу экрана -->
+<button class="btn btn--primary" type="button" id="btnPrimary" style="display:none;"></button>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+
+OsWork.setBackButton({ visible:true, fallbackUrl:"/" });
+
+document.getElementById("btnBack").onclick = () => OsWork.go("/", { replace:true, back:true });
+
+const ICON_CHEV_SM = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>`;
+const ICON_CHECK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+function plural(n, one, few, many){
+  const last = n % 10, twoLast = n % 100;
+  if(twoLast >= 11 && twoLast <= 14) return many;
+  if(last === 1) return one;
+  if(last >= 2 && last <= 4) return few;
+  return many;
+}
+
+function initials(name){
+  // «ООО «Пример»» → «П»: организационную форму и кавычки не считаем
+  const cleaned = String(name || "")
+    .replace(/^(ООО|ОАО|ЗАО|ПАО|АО|ИП)\s+/i, "")
+    .replace(/[«»"']/g, "")
+    .trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map(p => p[0].toUpperCase()).join("") || "?";
+}
+
+async function fetchJson(url, fallback){
+  try{
+    const r = await OsWork.apiFetch(url);
+    if(!r.ok) return fallback;
+    return await r.json();
+  }catch(e){
+    return fallback;
+  }
+}
+
+
+/* ===== Карточка компании ===== */
+
+function statusLine(status){
+  if(status === "Проверен"){
+    return {
+      tag: `<span class="verified" style="font-size:12.5px;">${ICON_CHECK}проверен</span>`,
+      note: ""
+    };
+  }
+  if(status === "Заблокирован"){
+    return {
+      tag: `<span class="tag tag--bad">Заблокирован</span>`,
+      note: "Публикация приостановлена. Напишите администратору прямо в чат с ботом."
+    };
+  }
+  return {
+    tag: `<span class="tag tag--wait">На проверке</span>`,
+    note: "Администратор проверяет профиль вручную. Вакансии можно готовить уже сейчас."
+  };
+}
+
+function renderProfile(p){
+  const box = document.getElementById("profileBox");
+
+  if(!p){
+    box.innerHTML = `
+      <div class="profile-card">
+        <div class="avatar">?</div>
+        <div style="min-width:0;flex-grow:1;">
+          <div class="profile-card__name">Профиль не заполнен</div>
+          <div class="profile-card__facts">Без профиля опубликовать вакансию не получится</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const st = statusLine(p.status);
+
+  box.innerHTML = `
+    <div class="profile-card">
+      <div class="avatar">${esc(initials(p.company_name))}</div>
+      <div style="min-width:0;flex-grow:1;">
+        <div class="profile-card__name">${esc(p.company_name || "Без названия")}</div>
+        ${p.activity ? `<div class="profile-card__role">${esc(p.activity)}</div>` : ""}
+        <div style="margin-top:6px;">${st.tag}</div>
+      </div>
+    </div>
+    ${st.note ? `<p class="note" style="margin-top:12px;">${st.note}</p>` : ""}
+    <button class="btn btn--quiet btn--block btn--sm" type="button" id="btnProfile" style="margin-top:14px;">Изменить профиль</button>
+  `;
+
+  document.getElementById("btnProfile").onclick = () => OsWork.go("/employer/profile");
+}
+
+
+/* ===== Сводка ===== */
+
+function renderStats(jobs){
+  const active = jobs.filter(j => j.status === "approved").length;
+  const apps = jobs.reduce((sum, j) => sum + Number(j.applications || 0), 0);
+  const views = jobs.reduce((sum, j) => sum + Number(j.views_total || 0), 0);
+
+  const tile = (num, label, href, accent) => `
+    <button class="stat-tile ${accent ? "stat-tile--accent" : ""}" type="button" data-href="${href}">
+      <span class="stat-tile__chev">${ICON_CHEV_SM}</span>
+      <div class="stat-tile__num">${num}</div>
+      <div class="stat-tile__label">${label}</div>
+    </button>`;
+
+  const box = document.getElementById("statsBox");
+
+  box.innerHTML =
+    tile(active, plural(active, "активная", "активные", "активных"), "/employer/jobs?status=active", false) +
+    tile(apps, plural(apps, "отклик", "отклика", "откликов"), "/employer/jobs", false) +
+    tile(views, plural(views, "просмотр", "просмотра", "просмотров"), "/employer/jobs", false);
+
+  box.querySelectorAll("[data-href]").forEach(b => {
+    b.onclick = () => OsWork.go(b.getAttribute("data-href"));
+  });
+}
+
+
+/* ===== Главное событие: новые отклики ===== */
+
+function renderEvent(applications){
+  const box = document.getElementById("eventBox");
+  const fresh = applications.filter(a => a.status === "new");
+
+  if(!fresh.length){
+    box.innerHTML = "";
+    return;
+  }
+
+  // Все новые — на одну вакансию: ведём прямо к её кандидатам
+  const jobIds = [...new Set(fresh.map(a => Number(a.job_id)))];
+  const target = jobIds.length === 1 ? `/employer/job/${jobIds[0]}/applications` : "/employer/jobs";
+  const people = fresh.length;
+
+  box.innerHTML = `
+    <section class="card card--event">
+      <div class="card__label card__label--accent">НОВЫЕ ОТКЛИКИ</div>
+      <div class="event__title">${people} ${plural(people, "человек ждёт", "человека ждут", "человек ждут")} ответа</div>
+      <div class="event__sub">Лучше ответить в первые сутки — через пару дней кандидат обычно уже нашёл работу.</div>
+      <button class="btn btn--primary" type="button" id="btnEvent" style="margin-top:14px;">Смотреть кандидатов</button>
+    </section>`;
+
+  document.getElementById("btnEvent").onclick = () => OsWork.go(target);
+}
+
+
+/* ===== Главное действие ===== */
+
+function setupPrimary(profile){
+  const btn = document.getElementById("btnPrimary");
+
+  if(profile && profile.status === "Заблокирован") return;
+
+  const text = profile ? "Опубликовать вакансию" : "Заполнить профиль";
+  const href = profile ? "/employer/job/new" : "/employer/profile";
+  const go = () => OsWork.go(href);
+
+  const main = OsWork.mainButton({ text, shine: true, onClick: go });
+
+  if(!main){
+    btn.textContent = text;
+    btn.onclick = go;
+    btn.style.display = "flex";
+  }
+}
+
+
+/* ===== Запуск ===== */
+
+(async function init(){
+  const [profileData, jobs, applications] = await Promise.all([
+    fetchJson("/api/employer/profile", {}),
+    fetchJson("/api/employer/jobs", []),
+    fetchJson("/api/employer/applications", [])
+  ]);
+
+  const profile = profileData && profileData.exists ? profileData.profile : null;
+  const jobList = Array.isArray(jobs) ? jobs : [];
+  const appList = Array.isArray(applications) ? applications : [];
+
+  renderProfile(profile);
+
+  if(profile){
+    renderStats(jobList);
+    renderEvent(appList);
+  }
+
+  setupPrimary(profile);
+
+  OsWork.stagger(document.querySelectorAll("#profileBox, .stat-tile, #eventBox .card"));
+})();
+</script>
+</body>
+</html>

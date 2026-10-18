@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Профиль работодателя</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="{{ url_for('static', filename='js/webapp_nav.js') }}?v=20260926d"></script>
+
+<script>window.BOT_USERNAME = "{{ bot_username }}";</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}?v=20260926d">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260926d">
+</head>
+<body>
+
+<div class="page-header page-header--nav">
+  <button class="btn btn--quiet btn--sm" type="button" id="btnBack">Назад</button>
+  <h1 class="page-title">Профиль</h1>
+  <span style="width:76px"></span>
+</div>
+
+<section class="card" id="profileCard">
+  <div id="typeStep">
+    <div class="card__label">КТО ВЫ</div>
+    <p class="note" style="margin-bottom:14px;">От этого зависит, какие поля нужны и как вас увидят соискатели.</p>
+
+    <button class="list-action" type="button" id="typeCompany">
+      <span class="list-action__icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V6a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v15"/><path d="M14 10h4a1 1 0 0 1 1 1v10"/><path d="M8 9h3M8 13h3M8 17h3"/></svg>
+      </span>
+      <span class="list-action__body">
+        Компания
+        <span class="list-action__hint">Организация, ИП, магазин, кафе, салон</span>
+      </span>
+      <span class="list-action__chev">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+      </span>
+    </button>
+
+    <button class="list-action" type="button" id="typePerson">
+      <span class="list-action__icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+      </span>
+      <span class="list-action__body">
+        Частное лицо
+        <span class="list-action__hint">Предлагаете то, что умеете сами: фотограф, репетитор, мастер, водитель</span>
+      </span>
+      <span class="list-action__chev">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+      </span>
+    </button>
+  </div>
+
+  <div id="formStep" style="display:none;">
+    <div class="setting-row" style="margin-bottom:16px;">
+      <div style="min-width:0;">
+        <div class="setting-row__title" id="typeTitle">Компания</div>
+        <div class="setting-row__hint" id="typeHint">Организация, ИП, магазин</div>
+      </div>
+      <button class="btn btn--quiet btn--sm" type="button" id="btnChangeType">Изменить</button>
+    </div>
+
+    <label class="form-label" for="company_name" id="nameLabel">Название компании</label>
+    <input class="input" id="company_name" placeholder="ООО «Пример»">
+
+    <label class="form-label" for="activity" id="activityLabel">Сфера деятельности</label>
+    <input class="input" id="activity" placeholder="Продуктовый магазин">
+
+    <div id="contactBlock">
+      <label class="form-label" for="contact_name">Контактное лицо</label>
+      <input class="input" id="contact_name" placeholder="Кто общается с кандидатами">
+    </div>
+
+    <label class="form-label" for="phone">Телефон</label>
+    <input class="input" id="phone" type="tel" inputmode="tel" placeholder="+7 900 000-00-00">
+
+    <label class="form-label" for="about" id="aboutLabel">О компании</label>
+    <textarea class="textarea" id="about" placeholder="Чем занимаетесь, сколько человек в команде, условия работы"></textarea>
+
+    <label class="form-label" for="link">Сайт или страница в соцсети</label>
+    <input class="input" id="link" placeholder="необязательно">
+
+    <div class="preview">
+      <div class="preview__label">ТАК ВАС УВИДЯТ СОИСКАТЕЛИ</div>
+      <div id="previewBox"></div>
+    </div>
+
+    <button class="btn btn--primary" id="saveProfileBtn" type="button" style="margin-top:16px;">Сохранить профиль</button>
+    <div id="profileMsg" class="msg msg--center"></div>
+  </div>
+</section>
+
+<script>
+OsWork.init();
+
+// Вне Telegram пропуска нет: показываем заглушку и останавливаем страницу.
+if(OsWork.blockOutsideTelegram()){
+  throw new Error("Открыто вне Telegram");
+}
+
+OsWork.setBackButton({ visible:true, fallbackUrl:"/employer" });
+
+document.getElementById("btnBack").onclick = () => OsWork.go("/employer", { replace:true, back:true });
+
+let employerType = "company";
+let currentStatus = null;
+let profileMain = null;
+
+const ICON_CHECK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+const ICON_LINK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>`;
+
+const TYPE_TEXT = {
+  company: {
+    title: "Компания",
+    hint: "Организация, ИП, магазин",
+    nameLabel: "Название компании",
+    namePlaceholder: "ООО «Пример»",
+    namePreview: "Название компании",
+    activityLabel: "Сфера деятельности",
+    activityPlaceholder: "Продуктовый магазин",
+    aboutLabel: "О компании",
+    aboutPlaceholder: "Чем занимаетесь, сколько человек в команде, условия работы"
+  },
+  person: {
+    title: "Частное лицо",
+    hint: "Предлагаете то, что умеете сами",
+    nameLabel: "Ваше имя",
+    namePlaceholder: "Например, Алан Дзагоев",
+    namePreview: "Ваше имя",
+    activityLabel: "Чем вы занимаетесь",
+    activityPlaceholder: "Фотограф",
+    aboutLabel: "О себе",
+    aboutPlaceholder: "Что умеете, какой опыт, как работаете"
+  }
+};
+
+function esc(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+
+OsWork.attachPhoneMask(document.getElementById("phone"));
+
+function applyType(type){
+  employerType = type === "person" ? "person" : "company";
+  const t = TYPE_TEXT[employerType];
+
+  document.getElementById("typeTitle").textContent = t.title;
+  document.getElementById("typeHint").textContent = t.hint;
+  document.getElementById("nameLabel").textContent = t.nameLabel;
+  document.getElementById("company_name").placeholder = t.namePlaceholder;
+  document.getElementById("activityLabel").textContent = t.activityLabel;
+  document.getElementById("activity").placeholder = t.activityPlaceholder;
+  document.getElementById("aboutLabel").textContent = t.aboutLabel;
+  document.getElementById("about").placeholder = t.aboutPlaceholder;
+
+  document.getElementById("contactBlock").style.display =
+    employerType === "company" ? "block" : "none";
+
+  renderPreview();
+}
+
+// Родная кнопка «Сохранить» появляется, когда видна форма
+function showFormStep(){
+  document.getElementById("typeStep").style.display = "none";
+  document.getElementById("formStep").style.display = "block";
+
+  if(!profileMain){
+    profileMain = OsWork.mainButton({
+      text: currentStatus ? "Сохранить изменения" : "Сохранить профиль",
+      onClick: saveProfile
+    });
+    if(profileMain) document.getElementById("saveProfileBtn").style.display = "none";
+  }
+}
+
+function showTypeStep(){
+  document.getElementById("typeStep").style.display = "block";
+  document.getElementById("formStep").style.display = "none";
+
+  if(profileMain){
+    profileMain.hide();
+    profileMain = null;
+  }
+}
+
+function renderPreview(){
+  const t = TYPE_TEXT[employerType];
+
+  const name = document.getElementById("company_name").value.trim();
+  const activity = document.getElementById("activity").value.trim();
+  const about = document.getElementById("about").value.trim();
+  const link = document.getElementById("link").value.trim();
+
+  document.getElementById("previewBox").innerHTML = `
+    <div class="preview__name ${name ? "" : "preview__empty"}">${name ? esc(name) : t.namePreview}</div>
+    <div class="preview__activity ${activity ? "" : "preview__empty"}">${activity ? esc(activity) : t.activityLabel}</div>
+    ${currentStatus === "Проверен" ? `<div style="margin-top:6px;"><span class="verified" style="font-size:12.5px;">${ICON_CHECK}проверен</span></div>` : ""}
+    ${about ? `<div class="preview__about">${esc(about)}</div>` : ""}
+    ${link ? `<span class="preview__link">${ICON_LINK}${esc(link)}</span>` : ""}
+  `;
+}
+
+async function loadProfile(){
+  const r = await OsWork.apiFetch("/api/employer/profile");
+  const data = await r.json().catch(()=>({}));
+
+  if(!r.ok || !data.exists){
+    currentStatus = null;
+    applyType("company");
+    showTypeStep();
+    return;
+  }
+
+  const p = data.profile || {};
+  currentStatus = p.status || "На проверке";
+
+  document.getElementById("company_name").value = p.company_name || "";
+  document.getElementById("contact_name").value = p.contact_name || "";
+  document.getElementById("phone").value = OsWork.formatPhone(p.phone || "");
+  document.getElementById("activity").value = p.activity || "";
+  document.getElementById("about").value = p.about || "";
+  document.getElementById("link").value = p.link || "";
+
+  applyType(p.employer_type || "company");
+  document.getElementById("saveProfileBtn").textContent = "Сохранить изменения";
+  showFormStep();
+}
+
+async function saveProfile(){
+  const btn = document.getElementById("saveProfileBtn");
+  const msg = document.getElementById("profileMsg");
+  const label = btn.textContent;
+
+  btn.disabled = true;
+  btn.textContent = "Сохранение...";
+  if(profileMain) profileMain.busy(true);
+
+  const r = await OsWork.apiFetch("/api/employer/profile",{
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({
+      employer_type: employerType,
+      company_name: document.getElementById("company_name").value,
+      contact_name: document.getElementById("contact_name").value,
+      activity: document.getElementById("activity").value,
+      phone: document.getElementById("phone").value,
+      about: document.getElementById("about").value,
+      link: document.getElementById("link").value
+    })
+  });
+
+  const data = await r.json().catch(()=>({}));
+
+  btn.disabled = false;
+  btn.textContent = label;
+
+  if(!r.ok){
+    OsWork.haptic("error");
+    if(profileMain) profileMain.busy(false);
+    msg.className = "msg msg--center bad";
+    msg.textContent = data.error || "Ошибка";
+    return;
+  }
+
+  OsWork.haptic("success");
+  OsWork.setDirty(false);
+  if(profileMain) profileMain.done("Сохранено");
+  msg.className = "msg msg--center ok";
+  msg.textContent = "Профиль сохранён";
+
+  setTimeout(() => OsWork.go("/employer", { replace:true, back:true }), 700);
+}
+
+document.getElementById("typeCompany").addEventListener("click", ()=>{
+  applyType("company");
+  showFormStep();
+  OsWork.setDirty(true);
+});
+
+document.getElementById("typePerson").addEventListener("click", ()=>{
+  applyType("person");
+  showFormStep();
+  OsWork.setDirty(true);
+});
+
+document.getElementById("btnChangeType").addEventListener("click", showTypeStep);
+document.getElementById("saveProfileBtn").addEventListener("click", saveProfile);
+
+["company_name", "activity", "about", "link"].forEach(id=>{
+  document.getElementById(id).addEventListener("input", renderPreview);
+});
+
+// Начал править и случайно смахнул — Telegram переспросит
+OsWork.trackChanges(document.getElementById("formStep"));
+
+loadProfile();
+</script>
+</body>
+</html>
